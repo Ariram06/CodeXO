@@ -2,12 +2,12 @@
 
 ## Module Status
 
-| Module | Name | Status | Branch | Date |
-|--------|------|--------|--------|------|
-| M0 | Scaffolding | IMPLEMENTED | `main` | 2026-11-15 |
-| M1 | Domain + Hint Logic | IMPLEMENTED | `main` | 2026-11-15 |
-| M2 | Database | IMPLEMENTED | `main` | 2026-11-15 |
-| M3 | Authentication | NOT IMPLEMENTED | — | — |
+| Module | Name | Status | Branch | Commits | Date |
+|--------|------|--------|--------|---------|------|
+| M0 | Scaffolding | IMPLEMENTED | `main` | `896762b..8d9b0c1` | 2026-11-15 |
+| M1 | Domain + Hint Logic | IMPLEMENTED | `main` | `e8ffb00..9b7fc2b` | 2026-11-15 |
+| M2 | Database | IMPLEMENTED | `main` | `719c47e..a073149` | 2026-11-15 |
+| M3 | Authentication | NOT IMPLEMENTED | — | — | — |
 | M4 | Problems + Sessions | NOT IMPLEMENTED | — | — |
 | M5 | AI Layer | NOT IMPLEMENTED | — | — |
 | M6 | Hint Orchestration | NOT IMPLEMENTED | — | — |
