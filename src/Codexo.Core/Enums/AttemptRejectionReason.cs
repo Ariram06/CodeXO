@@ -8,3 +8,4 @@ public enum AttemptRejectionReason
     JunkOrGibberish = 3,
     FullSolutionSolicitation = 4
 }
+

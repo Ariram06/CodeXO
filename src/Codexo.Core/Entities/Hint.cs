@@ -16,3 +16,4 @@ public class Hint
 
     public ICollection<HintFeedback> Feedbacks { get; set; } = new List<HintFeedback>();
 }
+

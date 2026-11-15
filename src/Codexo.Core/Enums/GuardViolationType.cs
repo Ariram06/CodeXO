@@ -10,3 +10,4 @@ public enum GuardViolationType
     SpoilerAtEarlyLevel = 5,
     MalformedJson = 6
 }
+

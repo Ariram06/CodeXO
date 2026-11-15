@@ -109,3 +109,4 @@ public class AiResponseValidatorTests
         Assert.Contains(GuardViolationType.SpoilerAtEarlyLevel, result.Violations);
     }
 }
+

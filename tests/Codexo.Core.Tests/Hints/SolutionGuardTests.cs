@@ -99,3 +99,4 @@ public class SolutionGuardTests
         Assert.Empty(result.Violations);
     }
 }
+

@@ -10,3 +10,4 @@ public class HintFeedback
     public string? Comment { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
+

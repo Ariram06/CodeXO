@@ -16,3 +16,4 @@ public class ProblemSession
     public ICollection<Hint> Hints { get; set; } = new List<Hint>();
     public ICollection<UserAttempt> Attempts { get; set; } = new List<UserAttempt>();
 }
+
