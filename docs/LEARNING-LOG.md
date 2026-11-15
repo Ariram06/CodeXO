@@ -6,7 +6,7 @@
 |--------|------|--------|--------|------|
 | M0 | Scaffolding | IMPLEMENTED | `main` | 2026-11-15 |
 | M1 | Domain + Hint Logic | IMPLEMENTED | `main` | 2026-11-15 |
-| M2 | Database | NOT IMPLEMENTED | — | — |
+| M2 | Database | IMPLEMENTED | `main` | 2026-11-15 |
 | M3 | Authentication | NOT IMPLEMENTED | — | — |
 | M4 | Problems + Sessions | NOT IMPLEMENTED | — | — |
 | M5 | AI Layer | NOT IMPLEMENTED | — | — |
@@ -143,3 +143,65 @@ dotnet test Codexo.slnx
 ### Common Pitfalls
 - **Accidental Spoilers at L1/L2:** Casual phrases like "use a hash map" or "notice the sliding window" destroy the learning curve. `SolutionGuard` strictly enforces term boundaries.
 - **Top-Row Keyboard False Positives:** English words like "error" or "require" fall entirely on the QWERTY keyboard row (`qwertyuiop`). Keysmash filters must check consonant clusters rather than blindly checking keyboard row subsets.
+
+
+## M2: Database
+
+### What We Built
+We built the EF Core Code First database layer in `Codexo.Infrastructure` targeting SQL Server LocalDB (`MSSQLLocalDB`). `AppDbContext` maps all 6 domain entities via dedicated Fluent API configuration classes that isolate schema rules from domain POCOs. We implemented unique composite indexes, non-clustered lookup indexes, column constraints, and cascade delete rules. We generated and applied the `InitialCreate` migration to LocalDB and built `DbInitializer` to idempotently seed benchmark DSA problems (Two Sum, Valid Anagram, Merge Two Sorted Lists) and user preferences. All schema contracts, relationships, and constraints were documented in `Database-Design.md` and verified with integration tests.
+
+### Concepts
+- **Fluent API Entity Configuration:** Separating database mappings into `IEntityTypeConfiguration<T>` classes rather than decorating domain models with attributes ensures `Codexo.Core` remains purely decoupled from persistence concerns. File: [src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs).
+- **Composite Unique Index:** A constraint spanning multiple columns (e.g. `Platform` and `PlatformProblemId`) that guarantees uniqueness per external platform without relying on synthetic primary keys alone. File: [src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs).
+- **Idempotent Data Seeding:** A startup routine that inspects current database state before inserting data, ensuring migrations and seeds run safely across container, CI, or local test restarts. File: [src/Codexo.Infrastructure/Data/DbInitializer.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/DbInitializer.cs).
+
+### Runtime Flow
+```mermaid
+graph TD
+    A["API Program.cs Startup"] --> B["AddInfrastructure: Register AppDbContext"]
+    B --> C["Check Environment: IsDevelopment?"]
+    C -->|"Yes"| D["DbInitializer.SeedAsync()"]
+    D --> E["Database.MigrateAsync(): Apply Pending Migrations"]
+    E --> F{"context.Problems.AnyAsync()?"}
+    F -->|"No (Empty DB)"| G["Insert Benchmark Problems & Seed Preference"]
+    F -->|"Yes (Already Seeded)"| H["Skip Seeding"]
+    G --> I["SaveChangesAsync()"]
+    I --> J["Web API Ready for HTTP Requests"]
+    H --> J
+```
+
+1. Web API starts; `AddInfrastructure` registers `AppDbContext` connecting to LocalDB with SQL connection resiliency.
+2. In development, `Program.cs` resolves `AppDbContext` in a scoped lifetime.
+3. `DbInitializer.SeedAsync` checks for and applies any pending migrations.
+4. If no problems exist, it inserts initial benchmark DSA problems and seed user preferences.
+5. The application enters its listening loop ready to serve authenticated API requests.
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Used Fluent API (`IEntityTypeConfiguration<T>`) exclusively in `Codexo.Infrastructure`.
+  *Rejected alternative:* Data Annotations (`[Required]`, `[MaxLength]`, `[Index]`) on domain entities in `Codexo.Core`. Core must never import EF Core namespaces.
+- **Decision:** Direct `AppDbContext` usage in future services without a generic repository or UnitOfWork pattern.
+  *Rejected alternative:* Generic Repository and UnitOfWork abstraction layer. EF Core's `DbSet` is already an in-memory repository and `DbContext` is already a Unit of Work; wrapping them adds boilerplate and obscures LINQ capabilities.
+
+### Interview Questions & Model Answers
+- **Q: Why avoid a generic Repository pattern on top of Entity Framework Core?**
+  *A:* `DbContext` already implements the Unit of Work pattern, and `DbSet<T>` implements the Repository pattern with full `IQueryable` support. Adding another abstraction often either leaks `IQueryable` anyway (breaking the abstraction) or restricts query expressiveness (leading to N+1 query problems or in-memory filtering).
+- **Q: How does `ApplyConfigurationsFromAssembly` work and why is it preferred?**
+  *A:* It uses reflection to discover all classes implementing `IEntityTypeConfiguration<T>` in the specified assembly and automatically invokes `modelBuilder.ApplyConfiguration()`. This keeps `OnModelCreating` concise and avoids manual registration errors when new entities are added.
+- **Q: Why use `Trusted_Connection=True` and omit credentials from `appsettings.Development.json`?**
+  *A:* Storing database credentials or secrets in source control is a severe security risk. LocalDB supports Windows Integrated Authentication out of the box, ensuring developers can run locally without committing secrets to Git.
+
+### Run & Test Commands
+```bash
+# Apply pending EF Core migrations to LocalDB
+dotnet ef database update --project src/Codexo.Infrastructure --startup-project src/Codexo.Api
+
+# Run database integration tests
+dotnet test tests/Codexo.Api.IntegrationTests/Codexo.Api.IntegrationTests.csproj --verbosity normal
+
+# Run all tests across the solution
+dotnet test Codexo.slnx
+```
+
+### Common Pitfalls
+- **Package Version Drift:** Adding EF Core packages without specifying version constraints can pull in next-major daily builds (e.g. 11.0.0 on a net10.0 target). Pin to matching LTS versions (`10.0.*`).
+- **Missing Foreign Key Cascade Rules:** Neglecting cascade deletes causes orphaned records in child tables (e.g. hints or attempts when a session is cleared).
