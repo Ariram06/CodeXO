@@ -24,3 +24,4 @@ public record GuardResult
             Details = details.ToList()
         };
 }
+

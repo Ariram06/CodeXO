@@ -14,3 +14,4 @@ public record AttemptValidationResult
     public static AttemptValidationResult Reject(AttemptRejectionReason reason, string feedback) =>
         new() { IsApproved = false, RejectionReason = reason, FeedbackMessage = feedback };
 }
+

@@ -81,3 +81,4 @@ public class HintLadderTests
         Assert.Equal(HintLevel.L5_Deep, level);
     }
 }
+

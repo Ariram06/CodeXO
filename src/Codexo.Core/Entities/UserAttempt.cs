@@ -13,3 +13,4 @@ public class UserAttempt
     public AttemptRejectionReason? RejectionReason { get; set; }
     public DateTimeOffset SubmittedAt { get; set; } = DateTimeOffset.UtcNow;
 }
+

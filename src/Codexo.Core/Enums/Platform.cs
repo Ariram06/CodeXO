@@ -7,3 +7,4 @@ public enum Platform
     HackerRank = 2,
     Codeforces = 3
 }
+

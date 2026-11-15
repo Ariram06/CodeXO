@@ -6,3 +6,4 @@ public enum SessionStatus
     Completed = 2,
     Abandoned = 3
 }
+

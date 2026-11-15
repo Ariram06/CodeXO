@@ -8,3 +8,4 @@ public record AiHintResponseDto
     public string Content { get; init; } = string.Empty;
     public string Explanation { get; init; } = string.Empty;
 }
+
