@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Codexo",
+  "version": "0.1.0",
+  "description": "Progressive DSA hints — learn to solve the next problem yourself.",
+  "permissions": [
+    "sidePanel",
+    "activeTab"
+  ],
+  "side_panel": {
+    "default_path": "sidepanel/browser/index.html"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://leetcode.com/problems/*"],
+      "js": ["content/content-script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Open Codexo"
+  }
+}

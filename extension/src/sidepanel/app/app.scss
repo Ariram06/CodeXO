@@ -1,0 +1,28 @@
+.codexo-shell {
+  font-family: system-ui, -apple-system, sans-serif;
+  padding: 16px;
+  max-width: 400px;
+}
+
+.codexo-header {
+  margin-bottom: 16px;
+
+  h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #1a73e8;
+  }
+
+  p {
+    margin: 4px 0 0;
+    font-size: 0.875rem;
+    color: #5f6368;
+  }
+}
+
+.codexo-main {
+  p {
+    color: #3c4043;
+    font-size: 0.875rem;
+  }
+}

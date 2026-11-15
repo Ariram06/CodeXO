@@ -1,0 +1,53 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+bld/
+[Ll]og/
+[Ll]ogs/
+
+# User secrets
+secrets.json
+
+# NuGet
+*.nupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+# VS / Rider
+.vs/
+.idea/
+*.swp
+*~
+.vscode/
+
+# Node / Angular
+node_modules/
+dist/
+.angular/
+.sass-cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp.*
+
+# Extension build output
+extension/dist/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment
+.env
+.env.local
+.env.*.local

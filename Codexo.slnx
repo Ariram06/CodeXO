@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Codexo.Api/Codexo.Api.csproj" />
+    <Project Path="src/Codexo.Core/Codexo.Core.csproj" />
+    <Project Path="src/Codexo.Infrastructure/Codexo.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Codexo.Api.IntegrationTests/Codexo.Api.IntegrationTests.csproj" />
+    <Project Path="tests/Codexo.Core.Tests/Codexo.Core.Tests.csproj" />
+  </Folder>
+</Solution>
