@@ -29,6 +29,10 @@ secrets.json
 *~
 .vscode/
 
+# Test output
+TestResults/
+coverage/
+
 # Node / Angular
 node_modules/
 dist/
