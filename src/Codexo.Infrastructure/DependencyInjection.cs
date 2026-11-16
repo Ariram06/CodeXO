@@ -47,8 +47,14 @@ public static class DependencyInjection
         // Register TokenService
         services.AddScoped<ITokenService, TokenService>();
 
-        // Register SessionService
+        // Register SessionService & HintService
         services.AddScoped<ISessionService, SessionService>();
+        services.AddScoped<IHintService, HintService>();
+
+        // Register HybridCache
+#pragma warning disable EXTEXP0018
+        services.AddHybridCache();
+#pragma warning restore EXTEXP0018
 
         // Register AI Configuration & Prompt Builder
         services.Configure<AISettings>(configuration.GetSection(AISettings.SectionName));
