@@ -8,17 +8,17 @@
 | M1 | Domain + Hint Logic | IMPLEMENTED | `main` | `e8ffb00..9b7fc2b` | 2026-11-15 |
 | M2 | Database | IMPLEMENTED | `main` | `719c47e..a073149` | 2026-11-15 |
 | M2-CLEANUP | Database Refinements | IMPLEMENTED | `main` | `2831a96..79bd1f6` | 2026-11-16 |
-| M3 | Authentication | NOT IMPLEMENTED | — | — | — |
-| M4 | Problems + Sessions | NOT IMPLEMENTED | — | — |
-| M5 | AI Layer | NOT IMPLEMENTED | — | — |
-| M6 | Hint Orchestration | NOT IMPLEMENTED | — | — |
-| M7 | Feedback + Preferences | NOT IMPLEMENTED | — | — |
-| M8 | Hardening | NOT IMPLEMENTED | — | — |
-| M9 | Extension Scaffold | NOT IMPLEMENTED | — | — |
-| M10 | Content Script | NOT IMPLEMENTED | — | — |
-| M11 | Side Panel UI | NOT IMPLEMENTED | — | — |
-| M12 | Integration | NOT IMPLEMENTED | — | — |
-| M13 | Release | NOT IMPLEMENTED | — | — |
+| M3 | Authentication | IMPLEMENTED | `main` | `306ef41..285d595` | 2026-11-16 |
+| M4 | Problems + Sessions | NOT IMPLEMENTED | — | — | — |
+| M5 | AI Layer | NOT IMPLEMENTED | — | — | — |
+| M6 | Hint Orchestration | NOT IMPLEMENTED | — | — | — |
+| M7 | Feedback + Preferences | NOT IMPLEMENTED | — | — | — |
+| M8 | Hardening | NOT IMPLEMENTED | — | — | — |
+| M9 | Extension Scaffold | NOT IMPLEMENTED | — | — | — |
+| M10 | Content Script | NOT IMPLEMENTED | — | — | — |
+| M11 | Side Panel UI | NOT IMPLEMENTED | — | — | — |
+| M12 | Integration | NOT IMPLEMENTED | — | — | — |
+| M13 | Release | NOT IMPLEMENTED | — | — | — |
 
 ---
 
@@ -98,124 +98,96 @@ We implemented the domain model and hint-safety engine in `Codexo.Core` with zer
 graph TD
     A["User Request: Next Hint"] --> B["HintLadder: Determine Target Level"]
     B --> C{"Requires Attempt? (L2-L5)"}
-    C -->|"No (L1)"| D["Allow Hint Generation"]
-    C -->|"Yes"| E["AttemptGatingValidator: Validate Written Attempt"]
-    E -->|"Rejected"| F["Return Gating Error (Stay on Current Level)"]
-    E -->|"Approved"| D
-    D --> G["AI Provider (Raw JSON)"]
-    G --> H["AiResponseValidator: Deserialize & Check Schema"]
-    H -->|"Invalid JSON/Fields"| I["Flag MalformedJson"]
-    H -->|"Valid"| J["SolutionGuard: Structural Inspection"]
-    J -->|"Code Block / Compilable / Spoiler"| K["Trigger Regeneration / Fallback"]
-    J -->|"Clean"| L["Deliver Approved Progressive Hint"]
+    C -->|"Yes"| D["AttemptGatingValidator: Validate Attempt"]
+    D -->|"Invalid/Empty/Junk"| E["Reject with RejectionReason"]
+    D -->|"Valid"| F["Advance Level & Request Hint"]
+    C -->|"No (L1)"| F
+    F --> G["AI Response Generated"]
+    G --> H["SolutionGuard: Structural Inspection"]
+    H -->|"Violations Found"| I["Regenerate (1x) or Fallback Hint"]
+    H -->|"Clean"| J["Return Safe Progressive Hint"]
 ```
 
-1. User requests a hint for a problem session.
-2. `HintLadder` determines the authorized target level based on current level and attempts.
-3. For levels > L1, `AttemptGatingValidator` checks the user's attempt string.
-4. If the attempt fails quality or solicitation checks, progression is halted at the current level.
-5. AI hint response is parsed and schema-verified by `AiResponseValidator`.
-6. `SolutionGuard` checks the text structurally for code fences, statement declarations, and level spoilers.
-7. Only hints passing all guard checks are cleared for user delivery.
+1. User requests a hint for their active session; `HintLadder` calculates the next level.
+2. If advancing past L1, `AttemptGatingValidator` checks the user's attempt for length, word count, gibberish, and solution begging.
+3. Once validated, the AI generates candidate hint content.
+4. `SolutionGuard` inspects the text for code blocks, compilable statements, and spoilers.
+5. If safe, the hint is persisted and returned; otherwise a constrained retry or static fallback is returned.
 
 ### Design Decisions & Rejected Alternatives
-- **Decision:** Implemented `SolutionGuard` using multi-lingual structural regex tokenizers (function heads, typed assignments, loops) alongside code fence matchers.
-  *Rejected alternative:* Keyword blocklists alone. Words like `for`, `in`, `map`, or `return` appear in normal English prose; searching for raw keywords produces unacceptable false positives.
-- **Decision:** L1 is automatically unlockable without an attempt; L2 through L5 require a validated attempt.
-  *Rejected alternative:* Requiring an attempt before L1. Users need to read and understand the problem scope before they can formulate a meaningful attempt.
+- **Decision:** Structural parsing using regex and token heuristics for code detection rather than full language AST parsers.
+  *Rejected alternative:* Incorporating Roslyn or Tree-sitter for multiple languages. Regex/structural patterns cover multi-language code snippets with zero external dependencies and sub-millisecond execution.
+- **Decision:** Consonant-cluster and n-gram analysis for keysmash detection rather than keyboard-row letter matching.
+  *Rejected alternative:* Row regex (`^[qwertyuiop]+$`). This naive check falsely rejected legitimate English words like "error" and "require".
 
 ### Interview Questions & Model Answers
-- **Q: Why must hint level progression be calculated entirely server-side rather than accepted from the browser client?**
-  *A:* Clients are inherently untrusted environments where malicious users or modified extension scripts can forge request payloads. If the client specified the target level, a user could bypass attempt-gating and jump directly to L4 pseudocode or L5 deep analysis. Server authority guarantees progressive disclosure invariants.
-- **Q: How does `SolutionGuard` distinguish between pseudocode allowed at L4 and compilable code which is forbidden?**
-  *A:* Compilable code exhibits concrete language syntax: formal type signatures (`public int[]`), language-specific function definitions (`def `, `fn `), variable assignment statements terminated with semicolons, and exact loop header syntax. Pseudocode uses high-level operational descriptions without compilable assignment tokens.
-- **Q: Why does `AttemptGatingValidator` reject attempts soliciting a full solution?**
-  *A:* Codexo's mission is minimum effective guidance so the learner can solve the next problem independently. A request asking "give me the complete Python code" is a solution-begging shortcut, not an attempt. The validator rejects it and guides the user to articulate what they understand about the problem.
+- **Q: Why must hint progression be server-authoritative rather than client-driven?**
+  *A:* Trusting the client allows users to inspect network calls or manipulate browser state to skip levels, bypass attempt requirements, or receive final solutions immediately. Server authority guarantees progressive learning pedagogy and idempotency against parallel duplicate clicks.
+- **Q: How does `SolutionGuard` prevent false positives when users write algorithmic explanations?**
+  *A:* It separates structural code indicators (code fences, return types, semicolons, assignment operators) from natural language explanations, allowing conceptual discussion while strictly blocking compilable implementation syntax.
 
 ### Run & Test Commands
 ```bash
-# Run all unit tests for domain and hint logic
+# Run Core unit tests
 dotnet test tests/Codexo.Core.Tests/Codexo.Core.Tests.csproj --verbosity normal
-
-# Run all tests across the solution
-dotnet test Codexo.slnx
 ```
 
 ### Common Pitfalls
-- **Accidental Spoilers at L1/L2:** Casual phrases like "use a hash map" or "notice the sliding window" destroy the learning curve. `SolutionGuard` strictly enforces term boundaries.
-- **Top-Row Keyboard False Positives:** English words like "error" or "require" fall entirely on the QWERTY keyboard row (`qwertyuiop`). Keysmash filters must check consonant clusters rather than blindly checking keyboard row subsets.
+- **Overly aggressive keysmash detection:** Testing for repetitive keyboard rows flags normal words. Use consonant clustering and letter distribution metrics instead.
+- **Spoiler leakage in L1/L2:** High-level algorithmic names (e.g., "Two Pointers", "Hash Map") spoil the core problem-solving deduction step and must be quarantined until L3.
 
 
 ## M2: Database
 
 ### What We Built
-We built the EF Core Code First database layer in `Codexo.Infrastructure` targeting SQL Server LocalDB (`MSSQLLocalDB`). `AppDbContext` maps all 6 domain entities via dedicated Fluent API configuration classes that isolate schema rules from domain POCOs. We implemented unique composite indexes, non-clustered lookup indexes, column constraints, and cascade delete rules. We generated and applied the `InitialCreate` migration to LocalDB and built `DbInitializer` to idempotently seed benchmark DSA problems (Two Sum, Valid Anagram, Merge Two Sorted Lists) and user preferences. All schema contracts, relationships, and constraints were documented in `Database-Design.md` and verified with integration tests.
+We designed and implemented the relational persistence layer in `Codexo.Infrastructure` using Entity Framework Core 10 with SQL Server LocalDB (`MSSQLLocalDB`). We configured six domain entities using the Fluent API across dedicated configuration classes, enforcing primary keys, column constraints, composite indexes, and cascading/restricted delete behaviors. We established the initial EF Core migration (`InitialCreate`) and an idempotent `DbInitializer` seeding benchmark problems (*Two Sum*, *Valid Anagram*, *Merge Two Sorted Lists*) and development preferences. Five integration tests were implemented using `WebApplicationFactory` to verify migrations, unique constraints, and cascades.
 
 ### Concepts
-- **Fluent API Entity Configuration:** Separating database mappings into `IEntityTypeConfiguration<T>` classes rather than decorating domain models with attributes ensures `Codexo.Core` remains purely decoupled from persistence concerns. File: [src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs).
-- **Composite Unique Index:** A constraint spanning multiple columns (e.g. `Platform` and `PlatformProblemId`) that guarantees uniqueness per external platform without relying on synthetic primary keys alone. File: [src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs).
-- **Idempotent Data Seeding:** A startup routine that inspects current database state before inserting data, ensuring migrations and seeds run safely across container, CI, or local test restarts. File: [src/Codexo.Infrastructure/Data/DbInitializer.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/DbInitializer.cs).
-
-### Entity-Relationship Diagram
-```mermaid
-erDiagram
-    Problem ||--o{ ProblemSession : "has sessions (Restrict)"
-    ProblemSession ||--o{ Hint : "has hints (Cascade)"
-    ProblemSession ||--o{ UserAttempt : "has attempts (Cascade)"
-    Hint ||--o{ HintFeedback : "has feedback (Cascade)"
-    UserPreference {
-        uuid Id PK
-        string UserId UK
-        string PreferredLanguage
-        boolean AutoUnlockL1
-    }
-```
+- **Fluent API Entity Configuration:** Decoupling entity modeling from domain entities into separate `IEntityTypeConfiguration<T>` classes keeps domain models pure and persistence concerns encapsulated. File: [src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs).
+- **Composite Unique Constraints:** Enforcing uniqueness across `(Platform, PlatformProblemId)` prevents duplicate problems from being inserted into the database. File: [src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs).
+- **Idempotent Database Initialization:** Seeding checks if records already exist prior to inserting, ensuring that server restarts do not cause unique index collision errors. File: [src/Codexo.Infrastructure/Data/DbInitializer.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/DbInitializer.cs).
 
 ### Runtime Flow
 ```mermaid
 graph TD
-    A["API Program.cs Startup"] --> B["AddInfrastructure: Register AppDbContext"]
-    B --> C["Check Environment: IsDevelopment?"]
-    C -->|"Yes"| D["DbInitializer.SeedAsync()"]
-    D --> E["Database.MigrateAsync(): Apply Pending Migrations"]
-    E --> F{"context.Problems.AnyAsync()?"}
-    F -->|"No (Empty DB)"| G["Insert Benchmark Problems & Seed Preference"]
-    F -->|"Yes (Already Seeded)"| H["Skip Seeding"]
-    G --> I["SaveChangesAsync()"]
-    I --> J["Web API Ready for HTTP Requests"]
-    H --> J
+    A["API Startup / Integration Test"] --> B["DbInitializer.SeedAsync()"]
+    B --> C["context.Database.GetPendingMigrationsAsync()"]
+    C -->|"Pending Found"| D["context.Database.MigrateAsync()"]
+    C -->|"Up-to-date"| E["Check context.Problems.AnyAsync()"]
+    D --> E
+    E -->|"Empty"| F["Seed Problems & UserPreference"]
+    E -->|"Exists"| G["Skip Seeding (Idempotent)"]
 ```
 
-1. Web API starts; `AddInfrastructure` registers `AppDbContext` connecting to LocalDB with SQL connection resiliency.
-2. In development, `Program.cs` resolves `AppDbContext` in a scoped lifetime.
-3. `DbInitializer.SeedAsync` checks for and applies any pending migrations.
-4. If no problems exist, it inserts initial benchmark DSA problems and seed user preferences.
-5. The application enters its listening loop ready to serve authenticated API requests.
+1. Application or test host boots up.
+2. In Development, `DbInitializer.SeedAsync` checks for pending EF Core migrations and applies them automatically.
+3. The initializer checks if any problems exist in the database.
+4. If empty, it persists seed records; if records exist, it exits safely.
 
 ### Design Decisions & Rejected Alternatives
-- **Decision:** Used Fluent API (`IEntityTypeConfiguration<T>`) exclusively in `Codexo.Infrastructure`.
-  *Rejected alternative:* Data Annotations (`[Required]`, `[MaxLength]`, `[Index]`) on domain entities in `Codexo.Core`. Core must never import EF Core namespaces.
-- **Decision:** Direct `AppDbContext` usage in future services without a generic repository or UnitOfWork pattern.
-  *Rejected alternative:* Generic Repository and UnitOfWork abstraction layer. EF Core's `DbSet` is already an in-memory repository and `DbContext` is already a Unit of Work; wrapping them adds boilerplate and obscures LINQ capabilities.
+- **Decision:** Used SQL Server LocalDB with explicit Fluent API configuration classes rather than data annotations on domain entities.
+  *Rejected alternative:* Using Data Annotations (`[Key]`, `[MaxLength]`) on Core entities. In Clean Architecture, domain entities should remain framework-agnostic.
+- **Decision:** Pinned NuGet packages to `10.0.*` to ensure compatibility with .NET 10.
+  *Rejected alternative:* Using unpinned or floating versions, which pulled in EF Core 11 daily builds incompatible with the .NET 10 runtime.
 
 ### Interview Questions & Model Answers
-- **Q: Why avoid a generic Repository pattern on top of Entity Framework Core?**
-  *A:* `DbContext` already implements the Unit of Work pattern, and `DbSet<T>` implements the Repository pattern with full `IQueryable` support. Adding another abstraction often either leaks `IQueryable` anyway (breaking the abstraction) or restricts query expressiveness (leading to N+1 query problems or in-memory filtering).
-- **Q: How does `ApplyConfigurationsFromAssembly` work and why is it preferred?**
-  *A:* It uses reflection to discover all classes implementing `IEntityTypeConfiguration<T>` in the specified assembly and automatically invokes `modelBuilder.ApplyConfiguration()`. This keeps `OnModelCreating` concise and avoids manual registration errors when new entities are added.
-- **Q: Why use `Trusted_Connection=True` and omit credentials from `appsettings.Development.json`?**
-  *A:* Storing database credentials or secrets in source control is a severe security risk. LocalDB supports Windows Integrated Authentication out of the box, ensuring developers can run locally without committing secrets to Git.
+- **Q: Why use Fluent API over Data Annotations in Clean Architecture?**
+  *A:* Data Annotations place persistence and database metadata directly on domain classes, coupling domain entities to database concepts and schema details. The Fluent API separates entity definitions from relational schema mapping, keeping the Core domain pure.
+- **Q: How do you prevent migration race conditions or crashes in multi-instance or test environments?**
+  *A:* By checking `GetPendingMigrationsAsync()` and ensuring seeding operations are strictly idempotent with `AnyAsync()` checks before writes.
+- **Q: Why is composite indexing necessary on `(Platform, PlatformProblemId)`?**
+  *A:* Different platforms (e.g. LeetCode and HackerRank) might use the same problem IDs (e.g. "1"). A composite unique index guarantees uniqueness per platform while speeding up lookups by platform and platform ID.
 
 ### Run & Test Commands
 ```bash
-# Apply pending EF Core migrations to LocalDB
+# Add EF Core migration
+dotnet ef migrations add <MigrationName> --project src/Codexo.Infrastructure --startup-project src/Codexo.Api
+
+# Update LocalDB database
 dotnet ef database update --project src/Codexo.Infrastructure --startup-project src/Codexo.Api
 
-# Run database integration tests
-dotnet test tests/Codexo.Api.IntegrationTests/Codexo.Api.IntegrationTests.csproj --verbosity normal
-
-# Run all tests across the solution
-dotnet test Codexo.slnx
+# Run integration tests against LocalDB
+dotnet test tests/Codexo.Api.IntegrationTests/Codexo.Api.IntegrationTests.csproj
 ```
 
 ### Common Pitfalls
@@ -276,3 +248,77 @@ dotnet test Codexo.slnx --verbosity normal
 ### Common Pitfalls
 - **Untracked Test Collisions:** Integration tests that insert static IDs can fail on repeated runs if previous test runs failed before cleanup. Always use unique identifiers (e.g. `Guid.NewGuid()`) for test problem records.
 - **Severed Required Relationships in Memory:** Attempting to delete a parent with tracked children under `Restrict` trips client-side conceptual null checks before the SQL constraint can even be reached.
+
+
+## M3: Authentication
+
+### What We Built
+We implemented complete token-based authentication and user management using **ASP.NET Core Identity** and **JSON Web Tokens (JWT)**. `AppDbContext` was upgraded to inherit from `IdentityDbContext<AppUser>`, introducing ASP.NET Core Identity tables (`AspNetUsers`, `AspNetRoles`, `AspNetUserClaims`, etc.) and establishing foreign key relationships from `ProblemSessions`, `UserPreferences`, and `HintFeedbacks` to `AspNetUsers(Id)`, eliminating the `seed-user-1` placeholder. We created `TokenService` implementing `ITokenService` to issue HMAC-SHA256 signed JWTs containing `sub`, `email`, and `jti` claims. We implemented `AuthController` endpoints (`/api/auth/register`, `/api/auth/login`, and protected `/api/auth/me`) guarded by FluentValidation and account enumeration defense. Nine integration tests verify registration, password complexity validation, login, token tampering detection, and claims authorization.
+
+### Concepts
+- **ASP.NET Core Identity Integration with Clean Architecture:** `AppUser` extends `IdentityUser` inside `Codexo.Infrastructure` while `Codexo.Core` maintains agnostic domain models storing `UserId` as a GUID string. EF Core Fluent configurations map foreign keys (`FK_ProblemSessions_AspNetUsers_UserId`) cleanly without polluting the Core domain with Identity dependencies. File: [src/Codexo.Infrastructure/Identity/AppUser.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Identity/AppUser.cs).
+- **Cryptographic JWT Authentication:** Tokens are signed using symmetric HMAC-SHA256 credentials with keys retrieved via .NET User Secrets or secure configuration. Token validation parameters enforce issuer, audience, signature, and zero clock skew. File: [src/Codexo.Infrastructure/Auth/TokenService.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Auth/TokenService.cs).
+- **Account Enumeration Defense:** Registration and login endpoints provide uniform error responses (`"Invalid email or password."`) whether an email exists or does not exist, eliminating timing and content side-channels that attackers exploit to harvest registered user emails. File: [src/Codexo.Api/Controllers/AuthController.cs](file:///c:/Ariram/CodeXO/src/Codexo.Api/Controllers/AuthController.cs).
+- **SQL Server Multiple Cascade Paths Defense:** SQL Server prohibits multiple cascade delete paths leading to the same child table. Because deleting an `AppUser` cascades through `ProblemSessions -> Hints -> HintFeedbacks`, the direct foreign key from `AspNetUsers` to `HintFeedbacks` was configured with `DeleteBehavior.Restrict` (`ON DELETE NO ACTION`), while `ProblemSessions` and `UserPreferences` use `Cascade`. File: [src/Codexo.Infrastructure/Data/EntityConfigurations/HintFeedbackConfiguration.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/EntityConfigurations/HintFeedbackConfiguration.cs).
+- **Startup Secret Presence Check:** In accordance with Codexo security rules, the application verifies that the JWT signing key is configured and at least 32 bytes at startup, reporting strictly `[Startup Check] JWT signing key configured: yes/no` without exposing secret values to logs or consoles. File: [src/Codexo.Api/Program.cs](file:///c:/Ariram/CodeXO/src/Codexo.Api/Program.cs).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Chrome Extension / Web Client
+    participant Auth as AuthController
+    participant Identity as UserManager<AppUser>
+    participant Token as TokenService
+    participant Protected as Protected Endpoint (/api/auth/me)
+
+    Note over Client, Auth: User Login Flow
+    Client->>Auth: POST /api/auth/login { email, password }
+    Auth->>Identity: FindByEmailAsync(email)
+    Auth->>Identity: CheckPasswordAsync(user, password)
+    alt Invalid Credentials or Unknown Email
+        Auth-->>Client: 401 Unauthorized ("Invalid email or password.")
+    else Valid Credentials
+        Auth->>Token: GenerateToken(user.Id, user.Email)
+        Token-->>Auth: Signed JWT Token
+        Auth-->>Client: 200 OK { token, expiresAtUtc, userId, email }
+    end
+
+    Note over Client, Protected: Authenticated Request Flow
+    Client->>Protected: GET /api/auth/me (Authorization: Bearer <token>)
+    Note over Protected: JwtBearerMiddleware validates signature, issuer, audience, expiry
+    alt Missing, Expired, or Tampered Token
+        Protected-->>Client: 401 Unauthorized
+    else Valid Token
+        Protected-->>Client: 200 OK { userId, email }
+    end
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Retained string `UserId` on `Codexo.Core` domain entities and mapped foreign keys in `Codexo.Infrastructure` via Fluent API without navigation properties on Core entities.
+  *Rejected alternative:* Having `ProblemSession` reference `AppUser` directly. This would violate the Clean Architecture dependency rule by forcing `Codexo.Core` to depend on `Microsoft.AspNetCore.Identity.EntityFrameworkCore`.
+- **Decision:** Configured `DeleteBehavior.Restrict` on `HintFeedback -> AppUser` and `Cascade` on `ProblemSession -> AppUser`.
+  *Rejected alternative:* Cascade on all user foreign keys. SQL Server rejected the schema migration with error 1785 (cycles or multiple cascade paths) because `HintFeedbacks` would receive cascade delete signals from both `Hints` and `AspNetUsers`.
+- **Decision:** Short access token lifetime (60 minutes) with refresh tokens specified as design-only in M3.
+  *Rejected alternative:* Building complex refresh token rotation endpoints before extension client storage architecture is implemented.
+
+### Interview Questions & Model Answers
+- **Q: How did you implement Clean Architecture when integrating ASP.NET Core Identity with your domain entities?**
+  *A:* ASP.NET Core Identity is an infrastructure and framework concern. In `Codexo.Core`, our domain entities (`ProblemSession`, `HintFeedback`, `UserPreference`) define `UserId` as a pure primitive `string` with no dependencies on Identity. In `Codexo.Infrastructure`, `AppDbContext` inherits from `IdentityDbContext<AppUser>`, and entity configurations establish relational foreign keys to `AspNetUsers(Id)` via Fluent API shadow foreign keys (`builder.HasOne<AppUser>().WithMany().HasForeignKey(s => s.UserId)`). This keeps our Core domain completely agnostic of authentication frameworks.
+- **Q: Why did SQL Server reject the migration when configuring cascade delete from AspNetUsers to HintFeedbacks, and how did you resolve it?**
+  *A:* SQL Server prohibits multiple cascade delete paths to a single table to prevent referential ambiguity and delete cycles. In our schema, deleting an `AppUser` cascades through `ProblemSessions -> Hints -> HintFeedbacks`. Adding a direct cascade foreign key from `AspNetUsers` to `HintFeedbacks` created two simultaneous cascade paths to `HintFeedbacks`. We resolved this by setting the direct relationship `HintFeedbacks.UserId -> AspNetUsers.Id` to `DeleteBehavior.Restrict` (`ON DELETE NO ACTION`), allowing the cascade to proceed exclusively through the session/hint hierarchy.
+- **Q: What is account enumeration, and how does your API defend against it?**
+  *A:* Account enumeration occurs when an API provides different responses (e.g. "Email does not exist" vs "Incorrect password") or observable execution timing differences that allow an attacker to determine whether a given email address has an active account. In Codexo, both registration and login endpoints return uniform, non-distinguishing error messages and HTTP status codes (`401 Unauthorized: "Invalid email or password."`) regardless of whether the email was registered or the password was incorrect.
+
+### Run & Test Commands
+```bash
+# Set local dev JWT key securely in User Secrets
+dotnet user-secrets set "Jwt:Key" "<strong-32-byte-secret>" --project src/Codexo.Api/Codexo.Api.csproj
+
+# Run all unit and integration tests (85 total)
+dotnet test Codexo.slnx --verbosity normal
+```
+
+### Common Pitfalls
+- **SQL Server Error 1785 (Multiple Cascade Paths):** SQL Server does not permit multiple cascade delete paths leading to the same table. Always trace all foreign key paths and apply `Restrict` / `NoAction` to redundant paths.
+- **Leaking Secrets in Console/Logs:** Never print secret keys or configuration values during startup checks. Check key presence and length, and output only boolean indicators (`yes/no`).
