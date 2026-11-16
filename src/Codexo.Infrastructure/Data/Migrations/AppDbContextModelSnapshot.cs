@@ -272,7 +272,7 @@ namespace Codexo.Infrastructure.Data.Migrations
                     b.HasOne("Codexo.Core.Entities.Problem", "Problem")
                         .WithMany("Sessions")
                         .HasForeignKey("ProblemId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Problem");
