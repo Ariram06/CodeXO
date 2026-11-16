@@ -8,7 +8,7 @@
 | M1 | Domain + Hint Logic | IMPLEMENTED | `main` | `e8ffb00..9b7fc2b` | 2026-11-15 |
 | M2 | Database | IMPLEMENTED | `main` | `719c47e..a073149` | 2026-11-15 |
 | M2-CLEANUP | Database Refinements | IMPLEMENTED | `main` | `2831a96..79bd1f6` | 2026-11-16 |
-| M3 | Authentication | IMPLEMENTED | `main` | `306ef41..285d595` | 2026-11-16 |
+| M3 | Authentication | IMPLEMENTED | `main` | `306ef41..1cb12cb` | 2026-11-16 |
 | M4 | Problems + Sessions | NOT IMPLEMENTED | — | — | — |
 | M5 | AI Layer | NOT IMPLEMENTED | — | — | — |
 | M6 | Hint Orchestration | NOT IMPLEMENTED | — | — | — |
