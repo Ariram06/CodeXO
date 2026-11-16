@@ -22,7 +22,38 @@ namespace Codexo.Infrastructure.Data.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("Codexo.Core.Entities.Hint", b =>
+            modelBuilder.Entity("Codexo.Core.Entities.Conversation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "UpdatedAtUtc");
+
+                    b.ToTable("Conversations", (string)null);
+                });
+
+            modelBuilder.Entity("Codexo.Core.Entities.Message", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -32,186 +63,67 @@ namespace Codexo.Infrastructure.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<string>("Explanation")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int>("GenerationAttempts")
+                    b.Property<int?>("InputTokens")
                         .HasColumnType("int");
 
-                    b.Property<bool>("IsFallback")
-                        .HasColumnType("bit");
+                    b.Property<string>("Model")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
-                    b.Property<int>("Level")
+                    b.Property<int?>("OutputTokens")
                         .HasColumnType("int");
 
-                    b.Property<Guid>("ProblemSessionId")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int>("Role")
+                        .HasColumnType("int");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProblemSessionId", "Level");
+                    b.HasIndex("ConversationId");
 
-                    b.ToTable("Hints", (string)null);
+                    b.HasIndex("ConversationId", "CreatedAtUtc");
+
+                    b.ToTable("Messages", (string)null);
                 });
 
-            modelBuilder.Entity("Codexo.Core.Entities.HintFeedback", b =>
+            modelBuilder.Entity("Codexo.Core.Entities.MessageFeedback", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Comment")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("datetimeoffset");
-
-                    b.Property<Guid>("HintId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsHelpful")
                         .HasColumnType("bit");
 
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("HintId", "UserId");
-
-                    b.ToTable("HintFeedbacks", (string)null);
-                });
-
-            modelBuilder.Entity("Codexo.Core.Entities.Problem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
+                    b.Property<Guid>("MessageId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("Description")
+                    b.Property<string>("UserId")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Difficulty")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<int>("Platform")
-                        .HasColumnType("int");
-
-                    b.Property<string>("PlatformProblemId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("Slug")
-                        .IsRequired()
-                        .HasMaxLength(250)
-                        .HasColumnType("nvarchar(250)");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(250)
-                        .HasColumnType("nvarchar(250)");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("Url")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Slug");
-
-                    b.HasIndex("Platform", "PlatformProblemId")
+                    b.HasIndex("MessageId")
                         .IsUnique();
 
-                    b.ToTable("Problems", (string)null);
-                });
+                    b.HasIndex("MessageId", "UserId")
+                        .IsUnique();
 
-            modelBuilder.Entity("Codexo.Core.Entities.ProblemSession", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("CurrentLevel")
-                        .HasColumnType("int");
-
-                    b.Property<DateTimeOffset>("LastActivityAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<Guid>("ProblemId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset>("StartedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("int");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProblemId");
-
-                    b.HasIndex("UserId", "ProblemId");
-
-                    b.HasIndex("UserId", "Status");
-
-                    b.ToTable("ProblemSessions", (string)null);
-                });
-
-            modelBuilder.Entity("Codexo.Core.Entities.UserAttempt", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("AttemptText")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<Guid>("ProblemSessionId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int?>("RejectionReason")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("int");
-
-                    b.Property<DateTimeOffset>("SubmittedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<int>("TargetLevel")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProblemSessionId", "TargetLevel");
-
-                    b.ToTable("UserAttempts", (string)null);
+                    b.ToTable("MessageFeedbacks", (string)null);
                 });
 
             modelBuilder.Entity("Codexo.Core.Entities.UserPreference", b =>
@@ -448,60 +360,69 @@ namespace Codexo.Infrastructure.Data.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
-            modelBuilder.Entity("Codexo.Core.Entities.Hint", b =>
+            modelBuilder.Entity("Codexo.Core.Entities.Message", b =>
                 {
-                    b.HasOne("Codexo.Core.Entities.ProblemSession", "ProblemSession")
-                        .WithMany("Hints")
-                        .HasForeignKey("ProblemSessionId")
+                    b.HasOne("Codexo.Core.Entities.Conversation", "Conversation")
+                        .WithMany("Messages")
+                        .HasForeignKey("ConversationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("ProblemSession");
+                    b.OwnsOne("Codexo.Core.Entities.MessageContextMetadata", "Metadata", b1 =>
+                        {
+                            b1.Property<Guid>("MessageId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<int?>("CodeLineCount")
+                                .HasColumnType("int")
+                                .HasColumnName("ContextCodeLineCount");
+
+                            b1.Property<string>("Host")
+                                .HasMaxLength(256)
+                                .HasColumnType("nvarchar(256)")
+                                .HasColumnName("ContextHost");
+
+                            b1.Property<bool>("IsTruncated")
+                                .HasColumnType("bit")
+                                .HasColumnName("ContextIsTruncated");
+
+                            b1.Property<string>("Language")
+                                .HasMaxLength(64)
+                                .HasColumnType("nvarchar(64)")
+                                .HasColumnName("ContextLanguage");
+
+                            b1.Property<string>("Platform")
+                                .HasMaxLength(64)
+                                .HasColumnType("nvarchar(64)")
+                                .HasColumnName("ContextPlatform");
+
+                            b1.Property<string>("Title")
+                                .HasMaxLength(256)
+                                .HasColumnType("nvarchar(256)")
+                                .HasColumnName("ContextTitle");
+
+                            b1.HasKey("MessageId");
+
+                            b1.ToTable("Messages");
+
+                            b1.WithOwner()
+                                .HasForeignKey("MessageId");
+                        });
+
+                    b.Navigation("Conversation");
+
+                    b.Navigation("Metadata");
                 });
 
-            modelBuilder.Entity("Codexo.Core.Entities.HintFeedback", b =>
+            modelBuilder.Entity("Codexo.Core.Entities.MessageFeedback", b =>
                 {
-                    b.HasOne("Codexo.Core.Entities.Hint", "Hint")
-                        .WithMany("Feedbacks")
-                        .HasForeignKey("HintId")
+                    b.HasOne("Codexo.Core.Entities.Message", "Message")
+                        .WithOne("Feedback")
+                        .HasForeignKey("Codexo.Core.Entities.MessageFeedback", "MessageId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Codexo.Infrastructure.Identity.AppUser", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Hint");
-                });
-
-            modelBuilder.Entity("Codexo.Core.Entities.ProblemSession", b =>
-                {
-                    b.HasOne("Codexo.Core.Entities.Problem", "Problem")
-                        .WithMany("Sessions")
-                        .HasForeignKey("ProblemId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Codexo.Infrastructure.Identity.AppUser", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Problem");
-                });
-
-            modelBuilder.Entity("Codexo.Core.Entities.UserAttempt", b =>
-                {
-                    b.HasOne("Codexo.Core.Entities.ProblemSession", "ProblemSession")
-                        .WithMany("Attempts")
-                        .HasForeignKey("ProblemSessionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ProblemSession");
+                    b.Navigation("Message");
                 });
 
             modelBuilder.Entity("Codexo.Core.Entities.UserPreference", b =>
@@ -564,21 +485,14 @@ namespace Codexo.Infrastructure.Data.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Codexo.Core.Entities.Hint", b =>
+            modelBuilder.Entity("Codexo.Core.Entities.Conversation", b =>
                 {
-                    b.Navigation("Feedbacks");
+                    b.Navigation("Messages");
                 });
 
-            modelBuilder.Entity("Codexo.Core.Entities.Problem", b =>
+            modelBuilder.Entity("Codexo.Core.Entities.Message", b =>
                 {
-                    b.Navigation("Sessions");
-                });
-
-            modelBuilder.Entity("Codexo.Core.Entities.ProblemSession", b =>
-                {
-                    b.Navigation("Attempts");
-
-                    b.Navigation("Hints");
+                    b.Navigation("Feedback");
                 });
 #pragma warning restore 612, 618
         }

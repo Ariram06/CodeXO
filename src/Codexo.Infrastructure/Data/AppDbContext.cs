@@ -12,11 +12,9 @@ public class AppDbContext : IdentityDbContext<AppUser>
     {
     }
 
-    public DbSet<Problem> Problems => Set<Problem>();
-    public DbSet<ProblemSession> ProblemSessions => Set<ProblemSession>();
-    public DbSet<Hint> Hints => Set<Hint>();
-    public DbSet<UserAttempt> UserAttempts => Set<UserAttempt>();
-    public DbSet<HintFeedback> HintFeedbacks => Set<HintFeedback>();
+    public DbSet<Conversation> Conversations => Set<Conversation>();
+    public DbSet<Message> Messages => Set<Message>();
+    public DbSet<MessageFeedback> MessageFeedbacks => Set<MessageFeedback>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

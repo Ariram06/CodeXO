@@ -5,36 +5,36 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Codexo.Core.AI;
-using Codexo.Core.Prompts;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 /// <summary>
-/// AI client communicating with Google Gemini API via its OpenAI-compatible endpoint.
-/// Enforces structured JSON output, low reasoning token consumption, and safe error mapping.
+/// Production AI client communicating with OpenAI-compatible endpoints (such as Google Gemini via its OpenAI compatibility API).
+/// Enforces timeout handling, token usage logging, and structured error mapping.
 /// </summary>
 public class OpenAiCompatibleAiClient : IAiClient
 {
     private readonly HttpClient _httpClient;
     private readonly AISettings _settings;
-    private readonly HintPromptBuilder _promptBuilder;
     private readonly ILogger<OpenAiCompatibleAiClient> _logger;
 
     public OpenAiCompatibleAiClient(
         HttpClient httpClient,
         IOptions<AISettings> options,
-        HintPromptBuilder promptBuilder,
         ILogger<OpenAiCompatibleAiClient> logger)
     {
         _httpClient = httpClient;
         _settings = options.Value;
-        _promptBuilder = promptBuilder;
         _logger = logger;
     }
 
-    public async Task<AiHintResponse> GenerateHintAsync(AiPromptRequest request, CancellationToken cancellationToken = default)
+    public async Task<string> GenerateChatResponseAsync(
+        string systemPrompt,
+        IEnumerable<(string Role, string Content)> history,
+        string userPrompt,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(userPrompt);
 
         if (string.IsNullOrWhiteSpace(_settings.ApiKey))
         {
@@ -43,20 +43,25 @@ public class OpenAiCompatibleAiClient : IAiClient
                 "or set the AI__ApiKey environment variable.");
         }
 
-        var (systemPrompt, userPrompt) = _promptBuilder.BuildPrompt(request);
+        var messageList = new List<object>
+        {
+            new { role = "system", content = systemPrompt }
+        };
+
+        foreach (var (role, content) in history)
+        {
+            messageList.Add(new { role, content });
+        }
+
+        messageList.Add(new { role = "user", content = userPrompt });
 
         var payload = new
         {
             model = _settings.Model,
-            messages = new[]
-            {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = userPrompt }
-            },
+            messages = messageList,
             temperature = _settings.Temperature,
             max_tokens = _settings.MaxTokens,
-            reasoning_effort = "low",
-            response_format = new { type = "json_object" }
+            reasoning_effort = "low"
         };
 
         var endpoint = _settings.BaseUrl.TrimEnd('/') + "/chat/completions";
@@ -150,7 +155,7 @@ public class OpenAiCompatibleAiClient : IAiClient
             var totalTokens = usage.TryGetProperty("total_tokens", out var tt) ? tt.GetInt32() : 0;
 
             _logger.LogInformation(
-                "AI generation completed. Model: {Model}, PromptTokens: {PromptTokens}, CompletionTokens: {CompletionTokens}, TotalTokens: {TotalTokens}",
+                "AI chat generation completed. Model: {Model}, PromptTokens: {PromptTokens}, CompletionTokens: {CompletionTokens}, TotalTokens: {TotalTokens}",
                 _settings.Model, promptTokens, completionTokens, totalTokens);
         }
 
@@ -172,7 +177,6 @@ public class OpenAiCompatibleAiClient : IAiClient
             throw new AiClientException("AI provider returned empty message content.");
         }
 
-        // Parse through tolerant JSON extractor
-        return TolerantJsonParser.Parse(rawContent, request.Level);
+        return rawContent;
     }
 }

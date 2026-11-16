@@ -18,30 +18,30 @@ public class FeedbackService : IFeedbackService
         _logger = logger;
     }
 
-    public async Task<HintFeedbackResponseDto> SubmitFeedbackAsync(
+    public async Task<MessageFeedbackResponseDto> SubmitFeedbackAsync(
         string userId,
-        Guid hintId,
+        Guid messageId,
         SubmitFeedbackRequestDto request,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
         ArgumentNullException.ThrowIfNull(request);
 
-        // Verify hint exists and belongs to a session owned by the authenticated user
-        var hint = await _dbContext.Hints
-            .Include(h => h.ProblemSession)
-            .FirstOrDefaultAsync(h => h.Id == hintId && h.ProblemSession != null && h.ProblemSession.UserId == userId, cancellationToken);
+        // Verify message exists and belongs to a conversation owned by the authenticated user
+        var message = await _dbContext.Messages
+            .Include(m => m.Conversation)
+            .FirstOrDefaultAsync(m => m.Id == messageId && m.Conversation != null && m.Conversation.UserId == userId, cancellationToken);
 
-        if (hint == null)
+        if (message == null)
         {
-            throw new KeyNotFoundException($"Hint {hintId} was not found for the authenticated user.");
+            throw new KeyNotFoundException($"Message {messageId} was not found for the authenticated user.");
         }
 
         var trimmedComment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim();
 
-        // One feedback per user per hint (upsert pattern)
-        var existingFeedback = await _dbContext.HintFeedbacks
-            .FirstOrDefaultAsync(f => f.HintId == hintId && f.UserId == userId, cancellationToken);
+        // Upsert pattern: one feedback per user per message
+        var existingFeedback = await _dbContext.MessageFeedbacks
+            .FirstOrDefaultAsync(f => f.MessageId == messageId && f.UserId == userId, cancellationToken);
 
         if (existingFeedback != null)
         {
@@ -49,49 +49,48 @@ public class FeedbackService : IFeedbackService
             existingFeedback.Comment = trimmedComment;
 
             await _dbContext.SaveChangesAsync(cancellationToken);
-            _logger.LogInformation("Updated feedback for hint {HintId} by user {UserId}. Helpful: {IsHelpful}", hintId, userId, request.IsHelpful);
+            _logger.LogInformation("Updated feedback for message {MessageId} by user {UserId}. Helpful: {IsHelpful}", messageId, userId, request.IsHelpful);
 
             return MapToDto(existingFeedback);
         }
 
-        var newFeedback = new HintFeedback
+        var newFeedback = new MessageFeedback
         {
             Id = Guid.NewGuid(),
-            HintId = hintId,
+            MessageId = messageId,
             UserId = userId,
             IsHelpful = request.IsHelpful,
             Comment = trimmedComment,
-            CreatedAt = DateTimeOffset.UtcNow
+            CreatedAtUtc = DateTimeOffset.UtcNow
         };
 
-        _dbContext.HintFeedbacks.Add(newFeedback);
+        _dbContext.MessageFeedbacks.Add(newFeedback);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        _logger.LogInformation("Created feedback for hint {HintId} by user {UserId}. Helpful: {IsHelpful}", hintId, userId, request.IsHelpful);
+        _logger.LogInformation("Created feedback for message {MessageId} by user {UserId}. Helpful: {IsHelpful}", messageId, userId, request.IsHelpful);
 
         return MapToDto(newFeedback);
     }
 
-    public async Task<HintFeedbackResponseDto?> GetUserFeedbackForHintAsync(
+    public async Task<MessageFeedbackResponseDto?> GetUserFeedbackForMessageAsync(
         string userId,
-        Guid hintId,
+        Guid messageId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
 
-        var feedback = await _dbContext.HintFeedbacks
+        var feedback = await _dbContext.MessageFeedbacks
             .AsNoTracking()
-            .FirstOrDefaultAsync(f => f.HintId == hintId && f.UserId == userId, cancellationToken);
+            .FirstOrDefaultAsync(f => f.MessageId == messageId && f.UserId == userId, cancellationToken);
 
         return feedback == null ? null : MapToDto(feedback);
     }
 
-    private static HintFeedbackResponseDto MapToDto(HintFeedback feedback) =>
+    private static MessageFeedbackResponseDto MapToDto(MessageFeedback feedback) =>
         new(
             Id: feedback.Id,
-            HintId: feedback.HintId,
-            UserId: feedback.UserId,
+            MessageId: feedback.MessageId,
             IsHelpful: feedback.IsHelpful,
             Comment: feedback.Comment,
-            CreatedAt: feedback.CreatedAt);
+            CreatedAt: feedback.CreatedAtUtc);
 }

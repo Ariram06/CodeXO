@@ -23,12 +23,12 @@ public class FeedbackController : ControllerBase
     }
 
     /// <summary>
-    /// Submits helpfulness feedback (thumbs up/down and optional comment) for a specific hint.
-    /// Idempotent / upsert: If feedback already exists for this user and hint, updates it.
+    /// Submits helpfulness feedback (thumbs up/down and optional comment) for a specific assistant message.
+    /// Idempotent / upsert: updates existing feedback if already submitted by this user for the message.
     /// </summary>
-    [HttpPost("api/hints/{hintId:guid}/feedback")]
+    [HttpPost("api/messages/{messageId:guid}/feedback")]
     public async Task<IActionResult> SubmitFeedback(
-        Guid hintId,
+        Guid messageId,
         [FromBody] SubmitFeedbackRequestDto request,
         CancellationToken cancellationToken)
     {
@@ -46,21 +46,21 @@ public class FeedbackController : ControllerBase
 
         try
         {
-            var feedback = await _feedbackService.SubmitFeedbackAsync(userId, hintId, request, cancellationToken);
+            var feedback = await _feedbackService.SubmitFeedbackAsync(userId, messageId, request, cancellationToken);
             return Ok(feedback);
         }
         catch (KeyNotFoundException)
         {
-            return NotFound(new { message = "Hint not found." });
+            return NotFound(new { message = "Message not found." });
         }
     }
 
     /// <summary>
-    /// Retrieves the calling user's feedback for a specific hint, if previously submitted.
+    /// Retrieves the calling user's feedback for a specific assistant message, if previously submitted.
     /// </summary>
-    [HttpGet("api/hints/{hintId:guid}/feedback")]
+    [HttpGet("api/messages/{messageId:guid}/feedback")]
     public async Task<IActionResult> GetFeedback(
-        Guid hintId,
+        Guid messageId,
         CancellationToken cancellationToken)
     {
         var userId = GetUserId();
@@ -69,10 +69,10 @@ public class FeedbackController : ControllerBase
             return Unauthorized(new { message = "User identity could not be verified." });
         }
 
-        var feedback = await _feedbackService.GetUserFeedbackForHintAsync(userId, hintId, cancellationToken);
+        var feedback = await _feedbackService.GetUserFeedbackForMessageAsync(userId, messageId, cancellationToken);
         if (feedback == null)
         {
-            return NotFound(new { message = "No feedback submitted by this user for this hint." });
+            return NotFound(new { message = "No feedback submitted by this user for this message." });
         }
 
         return Ok(feedback);

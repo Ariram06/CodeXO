@@ -4,14 +4,14 @@ using Codexo.Core.Dtos.Feedback;
 
 public interface IFeedbackService
 {
-    Task<HintFeedbackResponseDto> SubmitFeedbackAsync(
+    Task<MessageFeedbackResponseDto> SubmitFeedbackAsync(
         string userId,
-        Guid hintId,
+        Guid messageId,
         SubmitFeedbackRequestDto request,
         CancellationToken cancellationToken = default);
 
-    Task<HintFeedbackResponseDto?> GetUserFeedbackForHintAsync(
+    Task<MessageFeedbackResponseDto?> GetUserFeedbackForMessageAsync(
         string userId,
-        Guid hintId,
+        Guid messageId,
         CancellationToken cancellationToken = default);
 }

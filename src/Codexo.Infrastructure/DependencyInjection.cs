@@ -48,8 +48,7 @@ public static class DependencyInjection
         services.AddScoped<ITokenService, TokenService>();
 
         // Register Core Domain Services
-        services.AddScoped<ISessionService, SessionService>();
-        services.AddScoped<IHintService, HintService>();
+        services.AddScoped<IChatService, ChatService>();
         services.AddScoped<IFeedbackService, FeedbackService>();
         services.AddScoped<IPreferenceService, PreferenceService>();
 
@@ -58,16 +57,17 @@ public static class DependencyInjection
         services.AddHybridCache();
 #pragma warning restore EXTEXP0018
 
-        // Register AI Configuration & Prompt Builder
+        // Register AI Configuration & Prompt Builders
         services.Configure<AISettings>(configuration.GetSection(AISettings.SectionName));
-        services.AddSingleton<HintPromptBuilder>();
+        services.AddSingleton<ChatPromptBuilder>();
         services.AddHttpClient<OpenAiCompatibleAiClient>();
         services.AddTransient<FakeAiClient>();
 
         services.AddScoped<IAiClient>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<AISettings>>().Value;
-            if (string.Equals(options.Provider, "OpenAiCompatible", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(options.Provider, "OpenAiCompatible", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(options.Provider, "Gemini", StringComparison.OrdinalIgnoreCase))
             {
                 return sp.GetRequiredService<OpenAiCompatibleAiClient>();
             }
