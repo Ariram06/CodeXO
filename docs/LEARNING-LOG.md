@@ -10,7 +10,7 @@
 | M2-CLEANUP | Database Refinements | IMPLEMENTED | `main` | `2831a96..79bd1f6` | 2026-11-16 |
 | M3 | Authentication | IMPLEMENTED | `main` | `306ef41..1cb12cb` | 2026-11-16 |
 | M4 | Problems + Sessions | IMPLEMENTED | `main` | `bae5309..711fe8d` | 2026-11-16 |
-| M5 | AI Layer | NOT IMPLEMENTED | — | — | — |
+| M5 | AI Layer | IMPLEMENTED | `feature/m5-ai-layer` | `1f9f09f..[head]` | 2026-11-16 |
 | M6 | Hint Orchestration | NOT IMPLEMENTED | — | — | — |
 | M7 | Feedback + Preferences | NOT IMPLEMENTED | — | — | — |
 | M8 | Hardening | NOT IMPLEMENTED | — | — | — |
@@ -389,3 +389,79 @@ dotnet test Codexo.slnx --verbosity normal
 ### Common Pitfalls
 - **Accidental Cross-User Data Leaks:** Forgetting to filter by `UserId` when retrieving entities by GUID primary key (`context.ProblemSessions.FindAsync(id)`) allows any authenticated user to inspect another user's data if they obtain or guess the GUID. Always query with `FirstOrDefaultAsync(s => s.Id == id && s.UserId == userId)`.
 - **String Input Nullability & Whitespace:** DSA problem scrapers frequently return trailing whitespace or omitted difficulty fields. Always trim strings and provide fallback defaults (`"Unknown"`) before persistence.
+
+
+## M5: AI Layer (Gemini Integration & Evaluation Harness)
+
+### What We Built
+We built the complete AI abstraction layer connecting Codexo to Google's Gemini API via an OpenAI-compatible endpoint, while preserving complete offline determinism for testing and CI. We authored `IAiClient`, structured DTOs (`AiPromptRequest`, `AiHintResponse`), domain exceptions (`AiQuotaExceededException`, `AiAuthenticationException`, `AiServiceUnavailableException`), and `HintPromptBuilder` that compiles embedded prompt templates (`Base.txt`, `L1.txt`..`L5.txt`) with delimiter-wrapped user data for prompt-injection defense. We built `TolerantJsonParser` for resilient schema extraction and `OpenAiCompatibleAiClient` targeting `gemini-4-hydrogen` with low reasoning effort, exponential backoff for transient 503 spikes, 429 quota handling, and sanitized token-only audit logging. A 10-problem benchmark evaluation harness evaluated 50 total hints against `SolutionGuard` (100% compliance), and an opt-in live smoke test verified live Gemini API connectivity.
+
+### Concepts
+- **Embedded Prompt Templates:** Storing prompt templates as embedded resources (`EmbeddedResource`) in `Codexo.Core.dll` ensures prompts are version-controlled, bundled with the binary, and accessible at runtime without fragile relative file paths. File: [src/Codexo.Core/Prompts/HintPromptBuilder.cs](file:///c:/Ariram/CodeXO/src/Codexo.Core/Prompts/HintPromptBuilder.cs).
+- **Delimiter Wrapping & Prompt Injection Defense:** Wrapping untrusted user data (attempts, descriptions) within explicit `<USER_DATA>` and `<DELIMITER>` tags prevents page content or malicious inputs from overriding system instructions. File: [src/Codexo.Core/Prompts/HintPromptBuilder.cs](file:///c:/Ariram/CodeXO/src/Codexo.Core/Prompts/HintPromptBuilder.cs).
+- **Tolerant JSON Parsing:** LLMs may wrap JSON responses in markdown code fences (````json ... ````) or include conversational preambles. `TolerantJsonParser` extracts the outermost JSON object and guarantees non-null collection properties. File: [src/Codexo.Infrastructure/Ai/TolerantJsonParser.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Ai/TolerantJsonParser.cs).
+- **Reasoning Effort Optimization:** Controlling model thinking depth via `reasoning_effort: "low"` slashes latency (from >30s timeouts down to ~4s) and minimizes expensive billed reasoning tokens. File: [src/Codexo.Infrastructure/Ai/OpenAiCompatibleAiClient.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Ai/OpenAiCompatibleAiClient.cs).
+- **Zero-Secret Diagnostics:** Diagnostic checks at startup check presence without logging keys (`API key configured: yes/no`). Audit logs record strictly token counts, never headers or prompts. File: [src/Codexo.Api/Program.cs](file:///c:/Ariram/CodeXO/src/Codexo.Api/Program.cs).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Caller as Hint Service (M6)
+    participant Client as OpenAiCompatibleAiClient
+    participant Builder as HintPromptBuilder
+    participant Gemini as Google Gemini API (gemini-4-hydrogen)
+    participant Parser as TolerantJsonParser
+    participant Guard as SolutionGuard
+
+    Caller->>Client: GenerateHintAsync(AiPromptRequest)
+    Client->>Builder: BuildPrompt(request)
+    Builder->>Builder: Load Base.txt + Level.txt from Assembly
+    Builder->>Builder: Wrap problem, attempt, & history in delimiters
+    Builder-->>Client: (SystemPrompt, UserPrompt)
+    Client->>Gemini: POST /chat/completions (model, reasoning_effort="low", response_format=json)
+    alt Transient 503 High Demand
+        Gemini-->>Client: HTTP 503 Service Unavailable
+        Client->>Client: Exponential backoff & retry (up to 3 attempts)
+    end
+    Gemini-->>Client: 200 OK (Envelope with choices[0].message.content)
+    Client->>Client: Log token counts (prompt, completion, total) - NO secrets
+    Client->>Parser: Parse(content, targetLevel)
+    Parser->>Parser: Strip fences, extract JSON object, normalize arrays
+    Parser-->>Client: AiHintResponse
+    Client-->>Caller: AiHintResponse
+    Caller->>Guard: Inspect(targetLevel, response.Hint)
+    Guard-->>Caller: GuardResult (IsValid, Details)
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Targeted `gemini-4-hydrogen` via Google's OpenAI-compatible endpoint with `reasoning_effort = "low"`.
+  *Rejected alternative:* Creating a separate proprietary Google SDK client or using heavy thinking budgets. Google's OpenAI-compatible endpoint provides clean provider independence, and `gemini-4-hydrogen` delivered sub-5-second validated hints.
+- **Decision:** Built `FakeAiClient` with deterministic static responses tailored to each level contract (L1–L5).
+  *Rejected alternative:* Relying on mock HTTP handlers or requiring live API keys in CI. Offline tests must execute fast, deterministically, and with zero network dependency.
+- **Decision:** Embedded prompt templates directly into the `Codexo.Core` assembly.
+  *Rejected alternative:* Reading prompt files from disk at runtime with `File.ReadAllText`. Deploying to Docker, Azure, or different working directories frequently breaks relative file paths.
+
+### Interview Questions & Model Answers
+- **Q: How does Codexo protect against prompt injection when processing untrusted problem text from external DSA platforms?**
+  *A:* Codexo uses structural delimiter wrapping and role separation. System instructions (loaded from embedded templates) specify strict behavioral boundaries and output schemas. All untrusted external inputs—including problem descriptions scraped from web pages, previous hint histories, and user attempt text—are isolated within labeled `<USER_DATA>` and `<DELIMITER>` tags in the user prompt, with explicit system instructions that content inside delimiters must never be interpreted as instructions.
+- **Q: Why is tolerant JSON parsing essential when integrating LLMs into production microservices?**
+  *A:* Even with structured outputs enabled (`response_format: { type: "json_object" }`), LLMs can occasionally enclose JSON in markdown code blocks (` ```json `), include leading/trailing whitespace, or omit optional collection arrays. A tolerant parser strips markdown artifacts, extracts the first valid JSON substring, deserializes the envelope, and defensively normalizes null collections to empty arrays, preventing deserialization crashes from disrupting the user experience.
+- **Q: How did you optimize Gemini API latency and costs for real-time hint generation?**
+  *A:* We configured `reasoning_effort: "low"` on `gemini-4-hydrogen`. Because reasoning tokens are billed as output tokens and slow down generation, setting reasoning effort to low reduced response latency from >30 seconds down to ~4 seconds while remaining within token budget constraints (`max_tokens: 800`).
+
+### Run & Test Commands
+```bash
+# Run all unit and integration tests (109 total)
+dotnet test Codexo.slnx --verbosity normal
+
+# Run AI evaluation harness benchmark (10 DSA problems across 5 levels)
+dotnet test tests/Codexo.Api.IntegrationTests/Codexo.Api.IntegrationTests.csproj --filter "EvaluationHarness"
+
+# Run opt-in live Gemini smoke test (requires AI:ApiKey in User Secrets)
+dotnet test tests/Codexo.Api.IntegrationTests/Codexo.Api.IntegrationTests.csproj --filter "LiveGeminiSmokeTest"
+```
+
+### Common Pitfalls
+- **Accidental Spoilers in Fallbacks/Mocks:** Interpolating problem titles into L1/L2 mock hints can trigger SolutionGuard failures if the problem title itself contains a data structure name (e.g. "Reverse Linked List" containing "linked list"). Keep L1/L2 mock templates purely generic.
+- **Leaking Secrets via Diagnostics:** Printing configuration values or raw exception bodies can expose API keys or bearer tokens in logs. Always sanitize log output to token counts only and restrict diagnostic checks to boolean presence flags.
