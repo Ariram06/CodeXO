@@ -10,7 +10,7 @@
 | M2-CLEANUP | Database Refinements | IMPLEMENTED | `main` | `2831a96..79bd1f6` | 2026-11-16 |
 | M3 | Authentication | IMPLEMENTED | `main` | `306ef41..1cb12cb` | 2026-11-16 |
 | M4 | Problems + Sessions | IMPLEMENTED | `main` | `bae5309..711fe8d` | 2026-11-16 |
-| M5 | AI Layer | IMPLEMENTED | `feature/m5-ai-layer` | `1f9f09f..[head]` | 2026-11-16 |
+| M5 | AI Layer | IMPLEMENTED | `feature/m5-ai-layer` | `1f9f09f..6f149e0` | 2026-11-16 |
 | M6 | Hint Orchestration | NOT IMPLEMENTED | — | — | — |
 | M7 | Feedback + Preferences | NOT IMPLEMENTED | — | — | — |
 | M8 | Hardening | NOT IMPLEMENTED | — | — | — |
