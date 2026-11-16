@@ -701,3 +701,71 @@ dotnet test Codexo.slnx
 
 ### Common Pitfalls
 - **Logging Sensitive Headers:** Standard request logging can inadvertently capture `Authorization: Bearer <token>` or passwords in request bodies. Keep request logging high-level (Method, Path, StatusCode, Duration) and log request bodies only on specific whitelisted, sanitized debug endpoints.
+
+
+## M9: Extension Scaffold & Messaging Bridge
+
+### What We Built
+We established the Manifest V3 Chrome Extension architecture, Angular side panel bridge, background service worker lifecycle, and content script messaging for Codexo. We authored declarative contracts in `extension/src/shared/extension-messaging.ts` defining typed message envelopes (`ProblemDetected`, `ProblemUpdated`, `GetActiveProblem`, `RequestProblemExtraction`, `Ping`, `Pong`) and problem payload contexts. We configured a dual build pipeline where Angular CLI compiles only the side panel SPA, while an independent esbuild script bundles the isolated background service worker and content script entry points per Codexo Build Rules v2. In `ExtensionBridgeService`, modern Angular Signals provide reactive state binding between the Chrome extension runtime and the Angular side panel UI.
+
+### Concepts
+- **Manifest V3 Architecture & Lifecycle:** MV3 replaces persistent background pages with ephemeral service workers (`background/service-worker.js`) that sleep when idle. The Side Panel API (`chrome.sidePanel`) hosts the Angular SPA (`sidepanel/index.html`), while content scripts run in isolated DOM worlds on LeetCode pages. File: [extension/public/manifest.json](file:///c:/Ariram/CodeXO/extension/public/manifest.json).
+- **Dual Pipeline Build Separation:** Manifest V3 forbids inline scripts and remote code. Angular CLI is configured exclusively for the side panel SPA. The background service worker and content script are bundled as standalone, zero-dependency ES modules via `esbuild` (`scripts/build-extension.mjs`), ensuring strict separation and fast compilation without bloated web frameworks in content scripts. File: [extension/scripts/build-extension.mjs](file:///c:/Ariram/CodeXO/extension/scripts/build-extension.mjs).
+- **Strongly-Typed Asynchronous Messaging:** Communication across Chrome extension boundaries (Content Script -> Service Worker -> Side Panel) uses typed discriminated unions (`ExtensionMessage<T>`). The background service worker maintains an in-memory active problem cache mapped by tab ID (`Map<number, ProblemContextPayload>`) and synchronizes state on tab switches (`chrome.tabs.onActivated`). File: [extension/src/shared/extension-messaging.ts](file:///c:/Ariram/CodeXO/extension/src/shared/extension-messaging.ts).
+- **Angular Signal-Based Bridge:** `ExtensionBridgeService` exposes Angular Signals (`isBridgeConnected`, `activeProblem`, `lastPingResponse`) to power UI reactivity in the side panel. It safely detects whether `chrome.runtime` APIs are available, enabling robust unit testing and mock development outside the browser. File: [extension/src/sidepanel/app/core/services/extension-bridge.service.ts](file:///c:/Ariram/CodeXO/extension/src/sidepanel/app/core/services/extension-bridge.service.ts).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Learner as Learner (Browser)
+    participant CS as Content Script (LeetCode Tab)
+    participant SW as Background Service Worker
+    participant SP as Angular Side Panel
+    participant Brg as ExtensionBridgeService (Signals)
+
+    Learner->>SW: Clicks Codexo Extension Icon
+    SW->>SW: chrome.sidePanel.open({ windowId })
+    SW-->>SP: Opens sidepanel/index.html
+    SP->>Brg: Initialize & subscribe to runtime messages
+    Brg->>SW: chrome.runtime.sendMessage(Ping)
+    SW-->>Brg: Return Pong (Bridge connected)
+    Learner->>CS: Navigates to LeetCode problem
+    CS->>SW: chrome.runtime.sendMessage(ProblemDetected, payload)
+    SW->>SW: Update TabProblemCache[tabId]
+    SW->>SP: Forward ProblemDetected to active side panel
+    SP->>Brg: Handle ProblemDetected
+    Brg->>Brg: activeProblem.set(payload)
+    Brg-->>SP: UI updates reactively via Angular Signal
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Used `esbuild` for content script and service worker bundles, keeping Angular CLI dedicated strictly to the side panel.
+  *Rejected alternative:* Configuring Angular CLI multi-projects to compile all extension entry points. Angular CLI generates heavy polyfills, runtime chunks, and DOM wrappers that conflict with MV3 service worker execution environments.
+- **Decision:** Tab-scoped problem caching in the background service worker (`Map<number, ProblemContextPayload>`).
+  *Rejected alternative:* Storing problem state only in the content script DOM. If a user switches between multiple LeetCode tabs or opens the side panel after page load, querying the background worker immediately returns the cached problem without forcing a DOM re-scrape.
+
+### Interview Questions & Model Answers
+- **Q: Why does Manifest V3 require separate build pipelines for the side panel versus the service worker and content script?**
+  *A:* In Manifest V3, background scripts execute in a pure Service Worker environment without a `window` or `document` DOM object. Standard Angular CLI builds generate DOM-dependent runtime shims, zone.js, and script-injection mechanisms designed for web applications. By dedicating Angular CLI strictly to the side panel (which has a full HTML DOM) and using a lightweight bundler like `esbuild` for the service worker and content script, we ensure zero DOM baggage, instant startup times, and strict compliance with Manifest V3 restrictions.
+- **Q: How do Angular Signals improve state management in a Chrome Extension side panel?**
+  *A:* Chrome Extension messaging is inherently asynchronous and event-driven. Wrapping extension runtime events inside Angular Signals (`activeProblem = signal<ProblemContextPayload | null>(null)`) allows UI components to reactively re-render with fine-grained reactivity whenever new messages arrive from the content script or service worker, without needing complex RxJS subject subscriptions or manual change detection triggers (`ChangeDetectorRef.detectChanges()`).
+
+### Teach-back (for Ariram)
+1. **Q: Why does Manifest V3 use a background Service Worker instead of a persistent background page?**
+   *Model Answer:* Persistent background pages in Manifest V2 remained in memory indefinitely, consuming RAM and battery even when the user was not interacting with the extension. MV3 replaces them with ephemeral Service Workers that are terminated by the browser when idle and spun up on-demand when an event (like a tab update or message) arrives, drastically reducing browser resource consumption.
+2. **Q: Why must communication between the content script and the Angular side panel pass through the background service worker?**
+   *Model Answer:* In Chrome Extension architecture, content scripts and extension pages (like the side panel) run in isolated execution contexts with different security privileges. A content script has direct access to the web page DOM but limited extension APIs; the side panel has full extension API access but zero direct access to web page DOMs. The background service worker acts as a centralized message router and state coordinator between them.
+
+### Run & Test Commands
+```bash
+# Run extension unit tests (Vitest)
+npm --prefix extension test -- --watch=false
+
+# Build all extension bundles (sidepanel, background, content, manifest)
+npm --prefix extension run build
+```
+
+### Common Pitfalls
+- **Missing `@types/chrome` in TypeScript Config:** Angular CLI projects do not include Chrome Extension types by default. Adding `@types/chrome` and specifying `"types": ["chrome"]` in `tsconfig.app.json` and `tsconfig.spec.json` prevents `TS2304: Cannot find name 'chrome'` compile errors.
+- **Accessing `window` in Service Workers:** Background service workers do not have a `window` object. Any access to `window` or `document` inside the service worker will throw a fatal runtime error and crash the worker.

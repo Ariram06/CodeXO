@@ -1,27 +1,38 @@
-// Codexo Extension Messaging Types
+// Codexo Extension Messaging Contracts
 // Shared between content script, service worker, and side panel
 
-/**
- * All message types in the Codexo extension.
- * Each part of the extension sends/receives these typed messages.
- */
 export enum MessageType {
-  // Content script → Service worker
+  // Content script -> Service worker -> Side panel
   ProblemDetected = "PROBLEM_DETECTED",
   ProblemUpdated = "PROBLEM_UPDATED",
 
-  // Service worker → Side panel
-  ProblemContext = "PROBLEM_CONTEXT",
+  // Side panel -> Service worker / Content script
+  GetActiveProblem = "GET_ACTIVE_PROBLEM",
+  RequestProblemExtraction = "REQUEST_PROBLEM_EXTRACTION",
 
-  // Side panel → Service worker
-  RequestHint = "REQUEST_HINT",
-
-  // General
+  // Diagnostic ping / pong
   Ping = "PING",
   Pong = "PONG",
 }
 
-export interface ExtensionMessage {
+export interface ProblemContextPayload {
+  platform: number; // 1 = LeetCode
+  platformProblemId: string;
+  title: string;
+  slug: string;
+  url: string;
+  difficulty: string;
+  description: string;
+}
+
+export interface ExtensionMessage<T = unknown> {
   type: MessageType;
-  payload?: unknown;
+  payload?: T;
+  timestamp?: number;
+}
+
+export interface ExtensionResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
 }

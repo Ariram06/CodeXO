@@ -1,7 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "outDir": "./out-tsc/spec"
+    "outDir": "./out-tsc/spec",
+    "types": ["chrome"]
   },
   "include": ["src/sidepanel/**/*.spec.ts", "src/sidepanel/**/*.ts"]
 }

@@ -1,9 +1,32 @@
 <div class="codexo-shell">
   <header class="codexo-header">
-    <h1>Codexo</h1>
-    <p>Progressive DSA Hints</p>
+    <div class="header-content">
+      <h1>Codexo</h1>
+      <p class="subtitle">Progressive DSA Hints</p>
+    </div>
+    <div class="bridge-status" [class.connected]="bridge.isBridgeConnected()">
+      <span class="status-dot"></span>
+      <span class="status-text">
+        {{ bridge.isBridgeConnected() ? 'Connected' : 'Ready' }}
+      </span>
+    </div>
   </header>
+
   <main class="codexo-main">
-    <p>Navigate to a LeetCode problem to get started.</p>
+    @if (bridge.activeProblem(); as problem) {
+      <div class="active-problem-card">
+        <div class="problem-meta">
+          <span class="difficulty-badge" [attr.data-difficulty]="problem.difficulty">{{ problem.difficulty }}</span>
+          <span class="problem-id">#{{ problem.platformProblemId }}</span>
+        </div>
+        <h2 class="problem-title">{{ problem.title }}</h2>
+        <p class="problem-slug">{{ problem.slug }}</p>
+      </div>
+    } @else {
+      <div class="empty-state">
+        <p class="empty-title">No Problem Detected</p>
+        <p class="empty-desc">Open a problem on LeetCode to receive progressive hints.</p>
+      </div>
+    }
   </main>
 </div>

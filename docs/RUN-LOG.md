@@ -12,8 +12,8 @@
 | M0–M6 | Scaffold through Hint Orchestration | VERIFIED | 123/123 | `main` | `896762b..0030874` | Fully implemented and verified green on main. |
 | M7 | Feedback + Preferences | VERIFIED | 131/131 | `feature/m7-feedback-preferences` | `458c492..5c389fc` | Feedback upserting, preference defaults, and cross-tenant 404 security fully verified. |
 | M8 | Hardening | VERIFIED | 134/134 | `feature/m8-hardening` | `03f8331..e680354` | RFC 7807 problem details, sanitized logging, targeted 6/min rate limiting, and /health verified. |
-| M9 | Extension Scaffold | IN PROGRESS | Pending | `feature/m9-extension-scaffold` | TBD | Starting autonomous execution. |
-| M10 | Content Script | PENDING | — | — | — | Planned. |
+| M9 | Extension Scaffold | VERIFIED | 4/4 (Ext), 134/134 (.NET) | `feature/m9-extension-scaffold` | `feature/m9-extension-scaffold` | Manifest V3, dual build pipeline, typed messaging router, Signals-based Angular bridge service. |
+| M10 | Content Script | IN PROGRESS | Pending | `feature/m10-content-script` | TBD | Starting problem extraction implementation. |
 | M11 | Side Panel UI | PENDING | — | — | — | Planned. |
 | M12 | Integration | PENDING | — | — | — | Planned. |
 | M13 | Release | PENDING | — | — | — | Planned. |
@@ -26,6 +26,10 @@
   - *What:* Merging locally into `main` after all tests pass on feature branch.
   - *Why:* Keeps `main` 100% green and preserves clean local history without blocking.
   - *Alternative rejected:* Forcing non-standard credentials or stalling the autonomous run.
+- **Decision 2 (M9 Extension Build):** Dual-pipeline separation with Angular CLI exclusively for side panel and esbuild for content script / service worker.
+  - *What:* Dedicated `scripts/build-extension.mjs` for standalone entry points.
+  - *Why:* Manifest V3 forbids DOM polyfills and eval in background workers; keeping content scripts lightweight without Angular overhead.
+  - *Alternative rejected:* Multi-app Angular workspace for background/content scripts.
 
 ---
 
