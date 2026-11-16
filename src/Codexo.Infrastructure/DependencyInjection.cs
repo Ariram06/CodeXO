@@ -1,7 +1,10 @@
 namespace Codexo.Infrastructure;
 
+using Codexo.Core.AI;
 using Codexo.Core.Auth;
 using Codexo.Core.Interfaces;
+using Codexo.Core.Prompts;
+using Codexo.Infrastructure.AI;
 using Codexo.Infrastructure.Auth;
 using Codexo.Infrastructure.Data;
 using Codexo.Infrastructure.Identity;
@@ -10,6 +13,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 public static class DependencyInjection
 {
@@ -45,6 +49,23 @@ public static class DependencyInjection
 
         // Register SessionService
         services.AddScoped<ISessionService, SessionService>();
+
+        // Register AI Configuration & Prompt Builder
+        services.Configure<AISettings>(configuration.GetSection(AISettings.SectionName));
+        services.AddSingleton<HintPromptBuilder>();
+        services.AddHttpClient<OpenAiCompatibleAiClient>();
+        services.AddTransient<FakeAiClient>();
+
+        services.AddScoped<IAiClient>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<AISettings>>().Value;
+            if (string.Equals(options.Provider, "OpenAiCompatible", StringComparison.OrdinalIgnoreCase))
+            {
+                return sp.GetRequiredService<OpenAiCompatibleAiClient>();
+            }
+
+            return sp.GetRequiredService<FakeAiClient>();
+        });
 
         return services;
     }
