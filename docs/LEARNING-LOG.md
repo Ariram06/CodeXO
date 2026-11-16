@@ -980,3 +980,72 @@ dotnet test Codexo.slnx
 
 ### Common Pitfalls
 - **Missing Required DTO Properties in Integration Tests:** When constructing complex records (such as `ProblemIntakeRequest`), omitting required properties (e.g. `Slug`) causes compile-time errors `CS7036`. Always verify constructor signatures when authoring contract tests.
+
+
+## M13: Release & Packaging
+
+### What We Built
+We established the release pipeline, packaging scripts, GitHub Actions CI/CD workflows, and production documentation for Codexo. We authored `package-extension.mjs` which validates required Manifest V3 build outputs (`manifest.json`, `background/service-worker.js`, `content/content-script.js`, `sidepanel/browser/index.html`) and packages them into `dist/codexo-extension-v0.1.0.zip` using platform-aware compression. We authored `.github/workflows/ci.yml` providing automated parallel CI/CD for both .NET 10 Web API and the Angular extension, running all 161 automated tests and publishing the packaged extension as a release artifact. Finally, we updated `README.md` into a comprehensive architecture, setup, and testing guide.
+
+### Concepts
+- **Cross-Platform Manifest V3 Release Packaging:** Extension packaging scripts must dynamically handle platform compression differences (`powershell Compress-Archive` on Windows, `zip -r` on POSIX environments) while asserting the structural presence of mandatory MV3 entry points before producing the archive. File: [extension/scripts/package-extension.mjs](file:///c:/Ariram/CodeXO/extension/scripts/package-extension.mjs).
+- **Parallel Matrix CI/CD Workflows:** Separating backend (.NET SDK) and extension (Node.js) into independent GitHub Actions jobs enables parallel execution, faster feedback cycles, and dedicated dependency caching (`setup-dotnet` and `setup-node`). File: [.github/workflows/ci.yml](file:///c:/Ariram/CodeXO/.github/workflows/ci.yml).
+- **Artifact Retention & Distribution:** Generating compressed zip artifacts in CI (`actions/upload-artifact@v4`) allows automated publishing to GitHub Releases or Chrome Web Store upload tools without manual local compilation. File: [.github/workflows/ci.yml](file:///c:/Ariram/CodeXO/.github/workflows/ci.yml).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer / GitHub
+    participant CI as GitHub Actions (.github/workflows/ci.yml)
+    participant DotNet as Backend Job (.NET 10)
+    participant Node as Extension Job (Node 22)
+    participant Artifacts as GitHub Actions Artifacts
+
+    Dev->>CI: Push to main / PR
+    par Backend Job
+        CI->>DotNet: Setup .NET 10 & Restore Codexo.slnx
+        DotNet->>DotNet: dotnet build Release
+        DotNet->>DotNet: dotnet test (136 unit & contract tests)
+        DotNet-->>CI: Backend 100% Green
+    and Extension Job
+        CI->>Node: Setup Node.js 22 & npm ci
+        Node->>Node: npm test (25 Vitest tests)
+        Node->>Node: npm run package
+        Node->>Node: Create codexo-extension-v0.1.0.zip (88 KB)
+        Node->>Artifacts: Upload Extension Zip Artifact
+        Node-->>CI: Extension 100% Green
+    end
+    CI-->>Dev: Build & Release Succeeded
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Packaged the extension via Node.js script calling platform compression built-ins (`Compress-Archive` / `zip`).
+  *Rejected alternative:* Adding heavy third-party npm compression dependencies (`archiver`, `adm-zip`). Built-in tools have zero dependency baggage, zero supply-chain risk, and run instantly.
+- **Decision:** Uploaded packaged zip directly in the CI pipeline.
+  *Rejected alternative:* Requiring developers to build and zip extension releases manually on their local machines. Automated CI builds guarantee reproducibility and eliminate "works on my machine" packaging differences.
+
+### Interview Questions & Model Answers
+- **Q: How does your CI/CD pipeline ensure that the packaged Chrome Extension actually runs in a browser?**
+  *A:* First, during `npm test`, Vitest runs unit tests on the Angular components and content script extractor, including simulated DOM fixtures and Chrome Extension messaging mocks. Second, during `package-extension.mjs`, an asset validation pre-check confirms that all mandatory Manifest V3 entry points (`manifest.json`, `background/service-worker.js`, `content/content-script.js`, and `sidepanel/browser/index.html`) exist and are non-empty before compression. Finally, the built artifact is published directly to GitHub Actions for end-to-end verification.
+- **Q: Why should backend and frontend builds run as separate parallel jobs in GitHub Actions?**
+  *A:* Running them in separate jobs allows GitHub Actions to spin up two isolated runner VMs concurrently, cutting overall CI wall-clock time in half. It also isolates language environments (.NET SDK vs Node.js) and prevents frontend dependency updates from invalidating backend restore caches.
+
+### Teach-back (for Ariram)
+1. **Q: Why is it necessary to verify that `sidepanel/browser/index.html` exists before zipping the extension?**
+   *Model Answer:* Modern Angular application builders place browser output in a nested `browser/` subfolder. If `manifest.json` specifies `"sidepanel/browser/index.html"` but the build output location changes or fails, Chrome will display a broken side panel error upon installation. Validating asset paths in the packaging script ensures broken builds fail fast in CI before release.
+2. **Q: How does Codexo maintain zero-secret compliance in public or shared GitHub repositories?**
+   *Model Answer:* Secrets (such as JWT signing keys and Gemini API keys) are never stored in code, configuration files, or git history. During local development, secrets are managed through `dotnet user-secrets` stored outside the repository tree. In CI/CD, tests execute against mock clients (`FakeAiClient`), and any production deployments inject secrets dynamically via encrypted GitHub Repository Secrets as environment variables.
+
+### Run & Test Commands
+```bash
+# Package extension zip artifact
+npm --prefix extension run package
+
+# Verify all tests across backend and extension (161 tests total)
+dotnet test Codexo.slnx
+npm --prefix extension test -- --watch=false
+```
+
+### Common Pitfalls
+- **Angular 17+ / 21 `browser/` Subdirectory in Manifest V3:** Angular's `@angular/build:application` defaults to writing to `outputPath/browser`. Forgetting to align `side_panel.default_path` in `manifest.json` causes Chrome to fail opening the side panel. Always ensure `manifest.json` points to `sidepanel/browser/index.html`.

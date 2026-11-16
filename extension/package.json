@@ -10,7 +10,8 @@
     "build:copy-manifest": "node -e \"const fs=require('fs');fs.cpSync('public/manifest.json','dist/codexo/manifest.json');fs.cpSync('public/icons','dist/codexo/icons',{recursive:true,force:true})\"",
     "build": "npm run build:sidepanel && npm run build:extension && npm run build:copy-manifest",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "package": "npm run build && node scripts/package-extension.mjs"
   },
   "private": true,
   "packageManager": "npm@11.8.0",

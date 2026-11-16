@@ -16,7 +16,7 @@
 | M10 | Content Script | VERIFIED | 11/11 (Ext), 134/134 (.NET) | `feature/m10-content-script` | `feature/m10-content-script` | Resilient multi-selector LeetCode scraper, DOM sanitization, SPA MutationObserver, 7 extractor tests. |
 | M11 | Side Panel UI | VERIFIED | 22/22 (Ext), 134/134 (.NET) | `feature/m11-side-panel-ui` | `feature/m11-side-panel-ui` | Standalone Angular components: Banner, Hint Ladder, Attempt Gating, Feedback, Preferences, Auth. |
 | M12 | Integration | VERIFIED | 25/25 (Ext), 136/136 (.NET) | `feature/m12-integration` | `feature/m12-integration` | Full multi-tier pipeline: DOM scrape -> Service Worker -> Sidepanel -> API -> AI -> Ladder; error recovery verified. |
-| M13 | Release | IN PROGRESS | Pending | `feature/m13-release` | TBD | Authoring GitHub Actions release workflows and extension zip packaging. |
+| M13 | Release | VERIFIED | 25/25 (Ext), 136/136 (.NET) | `feature/m13-release` | `feature/m13-release` | GitHub Actions CI/CD workflow, automated extension zip packaging (88 KB), production README. |
 
 ---
 
@@ -42,6 +42,22 @@
   - *What:* Gated `LiveGeminiSmokeTest` while keeping `EndToEndContractTests` running against offline mock client.
   - *Why:* Public LLM endpoints experience intermittent 503 high-demand spikes; offline test suites must run fast and deterministically.
   - *Alternative rejected:* Allowing live network calls during routine local or CI test runs.
+- **Decision 6 (M13 Cross-Platform Packaging):** Built `package-extension.mjs` using OS platform compression (`Compress-Archive` on Windows, `zip` on Linux/macOS).
+  - *What:* Zero extra npm dependencies, instant packaging, and automated asset presence assertions.
+  - *Why:* Keeps dependencies minimal without supply-chain bloat.
+  - *Alternative rejected:* Adding third-party `archiver` or `adm-zip` npm dependencies.
+
+---
+
+## 5. Autonomous Run Completion Summary
+
+- **Total Solution Tests**: **161 tests passing**
+  - Backend (.NET 10): **136 tests passing** (86 unit tests + 50 integration/contract tests)
+  - Extension (Angular & Vitest): **25 tests passing** (7 extractor + 2 bridge + 5 attempt + 3 ladder + 2 prefs + 3 app + 3 E2E integration)
+- **All Modules Completed**: M0 through M13 (100% complete and verified).
+- **Extension Artifact**: `extension/dist/codexo-extension-v0.1.0.zip` (88.1 KB).
+- **CI/CD Pipeline**: `.github/workflows/ci.yml` validated and ready.
+- **Zero Secrets**: Strict zero-secret compliance verified across all diffs, code, and logs.
 
 ---
 
