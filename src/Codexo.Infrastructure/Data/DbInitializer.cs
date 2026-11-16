@@ -4,11 +4,27 @@ using Codexo.Core.Entities;
 using Codexo.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 
+/// <summary>
+/// Development-only database initialization and seeding.
+/// In production, migrations are applied via deployment pipelines and seeding is disabled.
+/// </summary>
 public static class DbInitializer
 {
-    public static async Task SeedAsync(AppDbContext context, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Placeholder User ID used strictly for local development and integration tests.
+    /// In M3 (Authentication), this will be replaced by ASP.NET Core Identity users.
+    /// </summary>
+    public const string DevPlaceholderUserId = "seed-user-1";
+
+    public static async Task SeedAsync(AppDbContext context, bool isDevelopment = true, CancellationToken cancellationToken = default)
     {
-        // Apply pending migrations automatically on startup
+        // Safety guard: DbInitializer must ONLY run in Development
+        if (!isDevelopment)
+        {
+            return;
+        }
+
+        // Apply pending migrations automatically on local dev startup
         if ((await context.Database.GetPendingMigrationsAsync(cancellationToken)).Any())
         {
             await context.Database.MigrateAsync(cancellationToken);
@@ -65,10 +81,11 @@ public static class DbInitializer
 
         await context.Problems.AddRangeAsync(problems, cancellationToken);
 
+        // DEV-ONLY placeholder user preference
         var seedPreference = new UserPreference
         {
             Id = Guid.Parse("44444444-4444-4444-4444-444444444444"),
-            UserId = "seed-user-1",
+            UserId = DevPlaceholderUserId,
             PreferredLanguage = "C#",
             AutoUnlockL1 = true,
             CreatedAt = DateTimeOffset.UtcNow,
