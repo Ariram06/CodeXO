@@ -11,7 +11,7 @@
 | M3 | Authentication | IMPLEMENTED | `main` | `306ef41..1cb12cb` | 2026-11-16 |
 | M4 | Problems + Sessions | IMPLEMENTED | `main` | `bae5309..711fe8d` | 2026-11-16 |
 | M5 | AI Layer | IMPLEMENTED | `feature/m5-ai-layer` | `1f9f09f..6f149e0` | 2026-11-16 |
-| M6 | Hint Orchestration | NOT IMPLEMENTED | — | — | — |
+| M6 | Hint Orchestration | IMPLEMENTED | `feature/m6-hint-orchestration` | `585069c..fbc617b` | 2026-11-16 |
 | M7 | Feedback + Preferences | NOT IMPLEMENTED | — | — | — |
 | M8 | Hardening | NOT IMPLEMENTED | — | — | — |
 | M9 | Extension Scaffold | NOT IMPLEMENTED | — | — | — |
@@ -465,3 +465,94 @@ dotnet test tests/Codexo.Api.IntegrationTests/Codexo.Api.IntegrationTests.csproj
 ### Common Pitfalls
 - **Accidental Spoilers in Fallbacks/Mocks:** Interpolating problem titles into L1/L2 mock hints can trigger SolutionGuard failures if the problem title itself contains a data structure name (e.g. "Reverse Linked List" containing "linked list"). Keep L1/L2 mock templates purely generic.
 - **Leaking Secrets via Diagnostics:** Printing configuration values or raw exception bodies can expose API keys or bearer tokens in logs. Always sanitize log output to token counts only and restrict diagnostic checks to boolean presence flags.
+
+
+## M6: Hint Orchestration
+
+### What We Built
+We implemented the complete server-authoritative hint orchestration lifecycle connecting user sessions, the AI client (`IAiClient`), pedagogical validation (`SolutionGuard`), caching (`HybridCache`), and progressive unlock gating (`AttemptGatingValidator`). `HintService` coordinates hint requests, manages the three-tier generation pipeline (Attempt 1 -> Constrained Retry -> Safe Static Fallback), and guards against duplicate/parallel requests using single-flight request coalescing (`ConcurrentDictionary<Guid, Lazy<Task<HintResponseDto>>>`). `HintsController` exposes secure endpoints for requesting hints, submitting attempts, and querying progression ladder status, protected by ASP.NET Core rate limiting.
+
+### Concepts
+- **Server-Authoritative Ladder Progression:** The client never dictates hint levels or unlocks. The server determines the next level from existing hints, validates that L2–L5 require an approved attempt, and guarantees levels cannot be skipped. File: [src/Codexo.Infrastructure/Services/HintService.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Services/HintService.cs).
+- **Single-Flight Request Coalescing:** When a user double-clicks or multiple client calls arrive simultaneously for the same session, they coalesce onto a single `Lazy<Task<HintResponseDto>>`. All concurrent callers receive the same generated hint without wasting AI quota, creating duplicate records, or tripping concurrency errors. File: [src/Codexo.Infrastructure/Services/HintService.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Services/HintService.cs).
+- **Three-Tier SolutionGuard & Fallback Pipeline:** If generated AI output violates structural constraints (code fences, loops, spoilers), the service triggers 1 constrained regeneration with an explicit pedagogical reprimand appended to the prompt. If the second attempt fails, a static, pedagogically-safe hint is returned from `SafeFallbackHints`, ensuring the learner is never stranded or exposed to full solutions. File: [src/Codexo.Core/Hints/SafeFallbackHints.cs](file:///c:/Ariram/CodeXO/src/Codexo.Core/Hints/SafeFallbackHints.cs).
+- **HybridCache Multi-Tier Caching:** .NET 9/10 `HybridCache` caches canonical L1 (Understand) and L2 (Direction) hints by problem ID across all user sessions with a 24-hour expiration, while L3–L5 hints remain personalized to user attempts. File: [src/Codexo.Infrastructure/DependencyInjection.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/DependencyInjection.cs).
+- **EF Core Change Tracking Gotcha (Added vs Modified):** Adding an entity with a pre-assigned key (`Id = Guid.NewGuid()`) directly to a tracked collection (`session.Hints.Add(hint)`) causes EF Core to assume the entity is an existing database record and mark it `EntityState.Modified`, resulting in `DbUpdateConcurrencyException` on `SaveChangesAsync`. Explicitly calling `_dbContext.Hints.Add(hint)` correctly establishes `EntityState.Added`. File: [src/Codexo.Infrastructure/Services/HintService.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Services/HintService.cs).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Chrome Extension (Angular)
+    participant Ctrl as HintsController
+    participant Svc as HintService
+    participant Cache as HybridCache
+    participant AI as IAiClient (Gemini / Fake)
+    participant Guard as SolutionGuard
+    participant DB as SQL Server (AppDbContext)
+
+    Client->>Ctrl: POST /api/sessions/{id}/hints
+    Ctrl->>Svc: RequestNextHintAsync(userId, sessionId)
+    Svc->>Svc: InFlightRequests.GetOrAdd (Single-flight coalescing)
+    Svc->>DB: Query Session, Problem, Hints, Attempts
+    alt Target Level Requires Attempt (L2-L5) & No Approved Attempt
+        Svc-->>Ctrl: 400 Bad Request ("Level is locked...")
+        Ctrl-->>Client: 400 Bad Request
+    else L1 or Attempt Approved
+        alt Level is L1 or L2
+            Svc->>Cache: GetOrCreateAsync("hint:problem:{id}:level:{lvl}")
+        end
+        alt Cache Miss or Level L3-L5
+            Svc->>AI: GenerateHintAsync(request)
+            AI-->>Svc: AiHintResponse
+            Svc->>Guard: Inspect(level, hint)
+            alt Guard Violations Found
+                Svc->>AI: Regenerate with constrained reprimand
+                AI-->>Svc: AiHintResponse (Attempt 2)
+                Svc->>Guard: Inspect(level, hint)
+                alt Still Violates
+                    Svc->>Svc: SafeFallbackHints.GetFallback(level)
+                end
+            end
+        end
+        Svc->>DB: _dbContext.Hints.Add(hint) + Update LastActivityAt
+        DB-->>Svc: SaveChangesAsync()
+        Svc-->>Ctrl: HintResponseDto
+        Ctrl-->>Client: 200 OK (HintResponseDto)
+    end
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Implemented single-flight request coalescing using `ConcurrentDictionary<Guid, Lazy<Task<HintResponseDto>>>`.
+  *Rejected alternative:* Using simple database locks or letting parallel requests fail with 400 Bad Request. Single-flight guarantees that user double-clicks or parallel browser tabs safely share the identical response without wasting quota or showing confusing error banners.
+- **Decision:** Cached only L1 and L2 hints in `HybridCache`, keeping L3–L5 dynamic.
+  *Rejected alternative:* Caching all 5 hint levels globally. L1 and L2 are problem-level conceptual hints that are identical for all learners. L3–L5 incorporate the user's specific attempt notes, requiring dynamic generation.
+- **Decision:** Added guaranteed safe static fallbacks (`SafeFallbackHints`) for all 5 levels.
+  *Rejected alternative:* Throwing a 500 Internal Server Error when AI generation violates rules. A learning platform must fail gracefully, providing high-quality guidance even during AI outages or strict guard tripwires.
+
+### Interview Questions & Model Answers
+- **Q: How does Codexo handle race conditions when a user rapidly double-clicks the "Request Hint" button?**
+  *A:* We use a Single-Flight / Request Coalescing pattern backed by `ConcurrentDictionary<Guid, Lazy<Task<HintResponseDto>>>`. When a request arrives, `GetOrAdd` ensures that only one asynchronous generation task is created for that session. All subsequent concurrent requests obtain the exact same task and await its completion. This guarantees that only one LLM call is executed, exactly one hint is saved to the database, the hint level is never advanced twice, and all concurrent callers receive a successful 200 OK response with the generated hint.
+- **Q: Why did adding a child entity with a pre-set GUID to a tracked navigation collection trigger a `DbUpdateConcurrencyException` in EF Core?**
+  *A:* In EF Core, if an entity has a primary key with a non-default value (e.g. `Id = Guid.NewGuid()`), adding it via graph traversal to an already tracked collection (`session.Hints.Add(hint)`) causes the change tracker to assume that the entity is an existing row loaded from the database that has been modified (`EntityState.Modified`). When `SaveChangesAsync()` runs, EF Core generates an `UPDATE` query instead of an `INSERT`. Since the GUID does not exist in the database, 0 rows are affected, causing EF Core to throw optimistic concurrency exception `DbUpdateConcurrencyException`. The solution is to explicitly register the entity with `_dbContext.Hints.Add(hint)`, which forces the entity state to `EntityState.Added`.
+- **Q: What is the benefit of using ASP.NET Core `HybridCache` over `IMemoryCache` or `IDistributedCache`?**
+  *A:* `HybridCache` (introduced in .NET 9) unifies in-process L1 memory caching with out-of-process L2 distributed caching (e.g. Redis). It natively provides built-in stampede protection (cache stampede prevention through automatic request coalescing), serialized compact storage, and a single ergonomic API (`GetOrCreateAsync`), avoiding the boilerplate of managing multi-tier cache synchronization manually.
+
+### Run & Test Commands
+```bash
+# Run all unit tests including SafeFallbackHints tests (86 tests)
+dotnet test tests/Codexo.Core.Tests/Codexo.Core.Tests.csproj
+
+# Run all API integration tests including HintOrchestrationTests (37 tests)
+dotnet test tests/Codexo.Api.IntegrationTests/Codexo.Api.IntegrationTests.csproj
+
+# Run entire backend test suite (123 tests)
+dotnet test Codexo.slnx
+
+# Verify extension frontend build
+npm --prefix extension run build
+```
+
+### Common Pitfalls
+- **Accidental `EntityState.Modified` on Graph Navigation:** Avoid using collection `.Add()` on child entities with client-generated GUIDs unless the child entity state is explicitly configured or tracked. Prefer `DbContext.Set<T>().Add(entity)` to guarantee an `INSERT` statement.
+- **Overly Restrictive Regex in Attempt Validation:** Multi-word adjectives in user solicitations (e.g. `"full complete solution code"`) require quantifier grouping (`((full|complete|entire|whole)\s+)*`) rather than single optional tokens, ensuring aggressive adversarial attempts are cleanly caught.

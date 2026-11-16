@@ -1,6 +1,6 @@
 # Codexo — API Documentation
 
-> **Status:** PARTIALLY IMPLEMENTED (M3 Authentication and M4 Problems + Sessions complete; hint endpoints to be documented in M5–M7)
+> **Status:** IMPLEMENTED (M3 Authentication, M4 Problems & Sessions, M6 Hint Orchestration & Delivery)
 
 ## Base URL
 
@@ -190,6 +190,138 @@ Returned if no active session exists for this user on the specified problem.
 
 ---
 
+### 3. Hint Orchestration Endpoints (M6)
+
+All hint endpoints are secured with `[Authorize]` and rate-limited via the `"HintPolicy"` fixed-window policy (30 requests/minute per authenticated user).
+
+---
+
+#### Request Next Hint
+Requests the next progressive hint for an active session. The server is strictly authoritative:
+- **L1 (Understand):** Unlocked immediately upon session intake without requiring an attempt.
+- **L2 through L5:** Unlocked ONLY if a valid written attempt for that level has been submitted and approved.
+- Concurrency: Multiple concurrent requests for the same session coalesce safely via single-flight execution, returning the identical hint without duplicate AI tokens or advancing levels twice.
+
+- **Method:** `POST`
+- **Route:** `/api/sessions/{sessionId}/hints`
+- **Authentication:** Required (`Bearer <token>`)
+- **Rate Limit:** 30 requests/minute
+- **Status:** IMPLEMENTED
+
+##### Response (200 OK)
+```json
+{
+  "id": "e3b0c442-98fc-1c14-9afb-4c8996fb9242",
+  "sessionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "level": 1,
+  "hint": "Analyze the array bounds and consider whether any pair of numbers sum to target.",
+  "guidingQuestions": [
+    "What is the maximum time complexity acceptable given the input size?",
+    "Can the same array element be used twice?"
+  ],
+  "concepts": [],
+  "steps": [],
+  "pitfalls": [],
+  "isFallback": false,
+  "createdAt": "2026-11-16T12:30:00.0000000Z"
+}
+```
+
+##### Response (400 Bad Request)
+Returned if the target hint level requires a written attempt that has not yet been submitted or approved.
+```json
+{
+  "message": "Level L2_Direction is locked. A meaningful written attempt is required before unlocking this hint."
+}
+```
+
+##### Response (404 Not Found)
+Returned if the session ID does not exist or does not belong to the calling user.
+
+##### Response (429 Too Many Requests)
+Returned if Gemini quota or server rate limit is reached. Includes `Retry-After` header when available.
+
+---
+
+#### Submit Problem-Solving Attempt
+Submits the learner's written attempt for validation via `AttemptGatingValidator`. If approved, unlocks the next level.
+
+- **Method:** `POST`
+- **Route:** `/api/sessions/{sessionId}/attempts`
+- **Authentication:** Required (`Bearer <token>`)
+- **Status:** IMPLEMENTED
+
+##### Request Body
+```json
+{
+  "attemptText": "For each number in nums, compute complement = target - nums[i]. Check if complement exists in a hash map."
+}
+```
+
+##### Validation Rules
+- `attemptText`: Required, 15 to 5,000 characters, minimum 3 distinct words.
+- Rejects empty, keysmash (e.g. `"asdfasdfasdf"`), repetitive character floods, trivial phrases (`"idk"`, `"help"`), or full solution begging (`"give me the full code"`).
+
+##### Response (200 OK — Attempt Approved)
+```json
+{
+  "attemptId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "unlocked": true,
+  "targetLevel": 2,
+  "status": 1,
+  "rejectionReason": null,
+  "feedbackMessage": "Great reflection! Your attempt meets the criteria to unlock the next hint level."
+}
+```
+
+##### Response (200 OK — Attempt Rejected)
+```json
+{
+  "attemptId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "unlocked": false,
+  "targetLevel": 2,
+  "status": 2,
+  "rejectionReason": "FullSolutionSolicitation",
+  "feedbackMessage": "Codexo does not provide full solutions. Write a line describing what you have tried or what you understand about the problem constraints."
+}
+```
+
+---
+
+#### Get All Hints for Session
+Retrieves the complete chronological list of unlocked hints for the given session.
+
+- **Method:** `GET`
+- **Route:** `/api/sessions/{sessionId}/hints`
+- **Authentication:** Required (`Bearer <token>`)
+- **Status:** IMPLEMENTED
+
+##### Response (200 OK)
+Returns array of `HintResponseDto`.
+
+---
+
+#### Get Hint Progression Status
+Retrieves current progression ladder status, indicating whether the learner can request the next hint or needs to submit an attempt.
+
+- **Method:** `GET`
+- **Route:** `/api/sessions/{sessionId}/hints/status`
+- **Authentication:** Required (`Bearer <token>`)
+- **Status:** IMPLEMENTED
+
+##### Response (200 OK)
+```json
+{
+  "sessionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "currentLevel": 1,
+  "canRequestNextHint": false,
+  "nextLevel": 2,
+  "attemptRequiredForNextLevel": true,
+  "reason": "A valid attempt is required to unlock L2_Direction."
+}
+```
+
+---
+
 ## Future Endpoints
-- **AI Hints:** NOT IMPLEMENTED (M5 & M6)
 - **Feedback & Preferences:** NOT IMPLEMENTED (M7)

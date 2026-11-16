@@ -1,6 +1,6 @@
 # Codexo — AI Logic & Hint Ladder
 
-> **Status:** IMPLEMENTED (M1 Hint Validation & Solution Guard, M5 AI Client & Gemini Integration)
+> **Status:** IMPLEMENTED (M1 Hint Validation & Solution Guard, M5 AI Client & Gemini Integration, M6 Hint Orchestration & Delivery Pipeline)
 
 ## Hint Ladder (Source of Truth)
 
@@ -104,3 +104,22 @@ Every AI response is intercepted and validated structurally by `SolutionGuard` b
 The M5 evaluation harness tested 10 DSA benchmark problems across all 5 hint levels against schema validation and `SolutionGuard`:
 - Total hints evaluated: 50 / 50 passed (100% compliance).
 - Opt-in live smoke test with `gemini-4-hydrogen`: passed in 4s with 0 spoiler terms and valid schema.
+
+## Hint Orchestration & Delivery Pipeline (M6)
+
+The hint orchestration engine is encapsulated within `HintService : IHintService` in `Codexo.Infrastructure.Services`:
+
+1. **Attempt-Gating Progression:**
+   - **L1 (Understand):** Unlocked immediately upon problem intake without requiring an attempt.
+   - **L2–L5:** Strictly locked until the learner submits a validated written attempt for that level (`Status == AttemptStatus.Approved`).
+   - Server is authoritative: The client cannot request an arbitrary level or advance without an approved attempt.
+2. **Three-Tier Solution Guard Pipeline:**
+   - **Tier 1:** Standard AI generation via `IAiClient`. Inspected by `SolutionGuard.Inspect(level, hint)`.
+   - **Tier 2:** On structural guard violation or transient failure, exactly 1 constrained regeneration is executed with explicit pedagogical reprimand appended to the prompt.
+   - **Tier 3 (Safe Fallback):** If regeneration still violates structural constraints, a static, guaranteed-safe fallback hint (`SafeFallbackHints.GetFallback`) is delivered with `IsFallback = true`. The user is never left stranded or exposed to full solutions.
+3. **Caching with HybridCache:**
+   - L1 and L2 hints are canonical and cached across sessions for the same problem using .NET `HybridCache` under key `$"hint:problem:{problemId}:level:{level}"`.
+   - L3–L5 hints incorporate the learner's specific attempt notes and are generated dynamically.
+4. **Single-Flight Concurrency Protection:**
+   - In-flight requests for the same session coalesce onto a single `Lazy<Task<HintResponseDto>>` managed in `ConcurrentDictionary<Guid, Lazy<Task<HintResponseDto>>>`.
+   - Parallel duplicate requests (e.g. double-click) await the identical task and return the same delivered hint without duplicating LLM tokens, skipping levels, or triggering DB concurrency conflicts.
