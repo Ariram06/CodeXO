@@ -11,7 +11,7 @@
 | M3 | Authentication | IMPLEMENTED | `main` | `306ef41..1cb12cb` | 2026-11-16 |
 | M4 | Problems + Sessions | IMPLEMENTED | `main` | `bae5309..711fe8d` | 2026-11-16 |
 | M5 | AI Layer | IMPLEMENTED | `feature/m5-ai-layer` | `1f9f09f..6f149e0` | 2026-11-16 |
-| M6 | Hint Orchestration | IMPLEMENTED | `feature/m6-hint-orchestration` | `585069c..fbc617b` | 2026-11-16 |
+| M6 | Hint Orchestration | IMPLEMENTED | `feature/m6-hint-orchestration` | `585069c..82331a9` | 2026-11-16 |
 | M7 | Feedback + Preferences | NOT IMPLEMENTED | — | — | — |
 | M8 | Hardening | NOT IMPLEMENTED | — | — | — |
 | M9 | Extension Scaffold | NOT IMPLEMENTED | — | — | — |
