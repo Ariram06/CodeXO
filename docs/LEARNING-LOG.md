@@ -20,7 +20,7 @@
 | M12 | Integration | NOT IMPLEMENTED | — | — | — |
 | M13 | Release | IMPLEMENTED | `main` | `4c70a0b` | 2026-11-16 |
 | C1 | Chat Core (Backend) | IMPLEMENTED | `main` | `1b1c3e3` | 2026-11-16 |
-| C2 | Real Gemini for Chat | NOT IMPLEMENTED | — | — | — |
+| C2 | Real Gemini for Chat | IMPLEMENTED | `main` | `b85e80d` | 2026-11-16 |
 | C3 | Minimal Chat UI | NOT IMPLEMENTED | — | — | — |
 | C4 | Context Collection | NOT IMPLEMENTED | — | — | — |
 | C5 | Streaming | NOT IMPLEMENTED | — | — | — |
@@ -1113,3 +1113,66 @@ dotnet build Codexo.slnx
 dotnet test tests\Codexo.Core.Tests
 dotnet test tests\Codexo.Api.IntegrationTests
 ```
+
+---
+
+## C2: Real Gemini for Chat
+
+### What We Built
+We integrated the real Google Gemini API into `OpenAiCompatibleAiClient` using the OpenAI-compatible `/chat/completions` endpoint. We configured configurable reasoning level (`reasoning_effort: "low"`), raised `MaxTokens` to 2000 for complete chat answers, implemented robust RFC-compliant `Retry-After` header parsing (delta seconds and HTTP-date timestamps), mapped HTTP status codes to custom domain exceptions (401/403 -> `AiAuthenticationException`, 429 -> `AiQuotaExceededException`, 503/timeout -> `AiServiceUnavailableException`), enforced token-only audit logging with zero secret/prompt leakage, retuned per-user rate limits to 20 requests/minute for chat, added 14 mocked-handler unit tests, and created an opt-in live smoke test.
+
+### Concepts
+- **OpenAI-Compatible Chat Envelope:** Google Gemini exposes an OpenAI-compatible gateway (`/v1beta/openai/chat/completions`) that accepts standardized messages (`system`, `user`, `assistant`), `max_tokens`, and `reasoning_effort`, ensuring vendor flexibility. File: [src/Codexo.Infrastructure/Ai/OpenAiCompatibleAiClient.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Ai/OpenAiCompatibleAiClient.cs).
+- **Reasoning Effort Regulation:** Thinking models can generate thousands of hidden thinking tokens. Specifying `reasoning_effort: "low"` keeps generation latency under 5–10 seconds and prevents excessive quota burn. File: [src/Codexo.Infrastructure/Ai/AISettings.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Ai/AISettings.cs).
+- **RFC-Compliant Retry-After Handling:** Upstream rate limiters (HTTP 429) convey backoff in either delta seconds (`Retry-After: 30`) or HTTP dates (`Retry-After: Wed, 21 Oct 2026 07:28:00 GMT`). Supporting both formats ensures accurate client throttling. File: [src/Codexo.Infrastructure/Ai/OpenAiCompatibleAiClient.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Ai/OpenAiCompatibleAiClient.cs).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Chat as ChatService
+    participant AI as OpenAiCompatibleAiClient
+    participant Gemini as Google Gemini Gateway
+
+    Chat->>AI: GenerateChatResponseAsync(system, history, user)
+    AI->>AI: Build payload (messages, reasoning_effort="low", max_tokens=2000)
+    AI->>Gemini: POST /chat/completions (Bearer API Key)
+    alt 200 OK
+        Gemini-->>AI: { choices, usage }
+        AI->>AI: Log token counts only
+        AI-->>Chat: Assistant Text
+    else 429 Rate Limited
+        Gemini-->>AI: 429 (Retry-After)
+        AI-->>Chat: throw AiQuotaExceededException(retryAfter)
+    else 401/403 Rejected
+        Gemini-->>AI: 401/403
+        AI-->>Chat: throw AiAuthenticationException()
+    end
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Used Google Gemini's OpenAI-compatible endpoint rather than the native Google Cloud Vertex/GenAI SDK.
+  *Rejected alternative:* Installing vendor-specific Google SDKs. The OpenAI compatibility layer keeps infrastructure dependencies lean and easily swappable with local models (Ollama, vLLM) or OpenAI.
+- **Decision:** Set default `reasoning_effort` to `"low"`.
+  *Rejected alternative:* Defaulting to unconstrained thinking depth. Unbounded reasoning causes severe timeout risk and exhausts free-tier RPM/TPM quotas quickly.
+
+### Interview Questions & Model Answers
+- **Q: How does `OpenAiCompatibleAiClient` handle upstream HTTP 429 errors from Google Gemini without losing backoff context?**
+  *A:* It inspects the `Retry-After` response header, parsing either delta seconds or an RFC1123 HTTP date into a strongly-typed `TimeSpan`. It attaches this value to `AiQuotaExceededException`, allowing the API layer and UI to set the standard `Retry-After` header and inform the user of the exact delay before retrying.
+- **Q: Why must AI client logs strictly record token usage numbers and exclude prompt text and authorization headers?**
+  *A:* Security and privacy. Prompts contain proprietary source code and active page text, while headers contain secret API keys. Logging token counts provides complete visibility for cost analysis, rate-limit monitoring, and observability without ever persisting intellectual property or secrets into log storage.
+
+### Run & Test Commands
+```powershell
+# Run mocked unit tests covering all error classes
+dotnet test tests/Codexo.Api.IntegrationTests --filter "FullyQualifiedName~OpenAiCompatibleAiClientTests"
+
+# Run opt-in live smoke test against Gemini
+dotnet test tests/Codexo.Api.IntegrationTests --filter "FullyQualifiedName~GeminiLiveSmokeTests"
+
+# Run full backend test suite
+dotnet test Codexo.slnx
+```
+
+### Common Pitfalls
+- **Overriding global rate limits in integration tests:** When tests use `WebApplicationFactory.WithWebHostBuilder` to set `RateLimiting:PermitLimitPerMinute`, ensure that specific policy keys (like `ChatPermitLimitPerMinute`) in `appsettings.json` do not take unconditional precedence and mask test configuration overrides.
