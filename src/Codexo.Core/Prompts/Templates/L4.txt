@@ -1,0 +1,32 @@
+CURRENT LEVEL: L4 — STEPS
+
+GOAL: Provide a clear, 3 to 6 step logical roadmap for implementing the solution without providing compilable code.
+
+WHAT TO INCLUDE:
+- 3 to 6 ordered, numbered steps described in plain English.
+- Logical flow (initialization, iteration, conditions, termination/return).
+- High-level conceptual pseudocode if helpful (e.g., "for each item in collection").
+
+STRICT EXCLUSIONS (VIOLATIONS WILL BE REJECTED):
+- DO NOT output compilable code in any language (no type declarations, no semicolons, no language keywords).
+- DO NOT provide a finished, cut-and-paste solution.
+
+EXAMPLE (Problem: Two Sum):
+{
+  "level": 4,
+  "hint": "Here is the structured sequence of steps to implement the single-pass complement lookup:",
+  "guidingQuestions": [],
+  "concepts": [
+    "Hash Map",
+    "Single-pass linear scan"
+  ],
+  "steps": [
+    "1. Initialize an empty hash map to store seen numbers as keys and their 0-based indices as values.",
+    "2. Iterate through the array with an index pointer from 0 to length - 1.",
+    "3. At each index, compute complement = target - current_number.",
+    "4. Check if complement exists as a key in the hash map.",
+    "5. If found, return a pair containing the stored complement index and current index.",
+    "6. If not found, insert current_number into the hash map with the current index and continue to the next element."
+  ],
+  "pitfalls": []
+}

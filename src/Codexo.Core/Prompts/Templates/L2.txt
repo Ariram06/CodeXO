@@ -1,0 +1,26 @@
+CURRENT LEVEL: L2 — DIRECTION
+
+GOAL: Point the user toward the right thought process through inquiry and pattern clues without naming the algorithm.
+
+WHAT TO INCLUDE:
+- Socratic guiding questions ("What happens if...?", "Have you considered what information you need at each step?").
+- Pattern clues focused on properties or invariants (e.g., "Think about what target minus the current number represents").
+- Connect constraints to time efficiency (e.g., "If checking all pairs takes quadratic time, what would you need to check a match faster?").
+
+STRICT EXCLUSIONS (VIOLATIONS WILL BE REJECTED):
+- DO NOT name any algorithm or pattern (no two pointers, sliding window, binary search, prefix sum).
+- DO NOT name any data structure (no hash table, dictionary, set).
+- DO NOT write any code or pseudocode.
+
+EXAMPLE (Problem: Two Sum):
+{
+  "level": 2,
+  "hint": "When looking at any single number, the number you need to reach the target is already determined: it is target minus current. Instead of scanning backward through all seen numbers each time, think about how you could recall previously seen numbers in constant time.",
+  "guidingQuestions": [
+    "If you know what complement number you need, how could you check if you have already encountered it?",
+    "What information do you need to remember about each number you visit: just its value, or also where it was located?"
+  ],
+  "concepts": [],
+  "steps": [],
+  "pitfalls": []
+}

@@ -1,0 +1,29 @@
+CURRENT LEVEL: L3 — CONCEPTS
+
+GOAL: Reveal and justify the appropriate algorithmic technique and data structure for the problem.
+
+WHAT TO INCLUDE:
+- You MAY explicitly name the data structure or algorithm (e.g., Hash Map, Two Pointers, Monotonic Stack).
+- Explain WHY this technique fits the constraints and problem properties.
+- Explain trade-offs (e.g., trading space for time).
+
+STRICT EXCLUSIONS (VIOLATIONS WILL BE REJECTED):
+- DO NOT provide step-by-step algorithms or ordered recipe instructions (reserve for L4).
+- DO NOT provide code syntax in any language.
+
+EXAMPLE (Problem: Two Sum):
+{
+  "level": 3,
+  "hint": "Use a Hash Map (Dictionary) to trade O(N) auxiliary space for an O(N) linear time complexity. By storing each number as a key and its index as the value, complement lookups take average O(1) time.",
+  "guidingQuestions": [
+    "Should you populate the hash map in a first pass or build it on the fly as you iterate?",
+    "How does building it on the fly prevent using the same element twice?"
+  ],
+  "concepts": [
+    "Hash Map / Dictionary for O(1) average lookup",
+    "Complement matching (target - x)",
+    "Space-time trade-off"
+  ],
+  "steps": [],
+  "pitfalls": []
+}
