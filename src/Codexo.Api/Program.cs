@@ -15,6 +15,20 @@ using Microsoft.IdentityModel.Tokens;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.SetIsOriginAllowed(origin =>
+            string.IsNullOrEmpty(origin) ||
+            origin.StartsWith("chrome-extension://") ||
+            origin.StartsWith("http://localhost") ||
+            origin.StartsWith("https://localhost"))
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
 builder.Services.AddControllers();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -113,7 +127,12 @@ if (app.Environment.IsDevelopment())
     await DbInitializer.SeedAsync(dbContext, app.Environment.IsDevelopment());
 }
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
