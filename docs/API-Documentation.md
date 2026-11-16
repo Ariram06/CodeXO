@@ -1,6 +1,6 @@
 # Codexo — API Documentation
 
-> **Status:** PARTIALLY IMPLEMENTED (M3 Authentication complete; problem and hint endpoints to be documented in M4–M7)
+> **Status:** PARTIALLY IMPLEMENTED (M3 Authentication and M4 Problems + Sessions complete; hint endpoints to be documented in M5–M7)
 
 ## Base URL
 
@@ -27,26 +27,19 @@ Authorization: Bearer <jwt-token>
   - `email` / `Email`: User email address.
   - `jti`: Unique token ID (GUID).
 
-### Refresh Token Architecture (PROPOSED / Design-Only)
-In accordance with Codexo architecture principles, refresh tokens are currently designed for future implementation:
-- **Storage:** Secure database table `UserRefreshTokens` with columns: `Id` (GUID), `UserId` (FK to `AspNetUsers`), `TokenHash` (SHA-256 hash of random 64-byte crypto string), `ExpiresAtUtc`, `RevokedAtUtc`, `ReplacedByTokenId`.
-- **Rotation:** Refresh token rotation on each exchange. Reusing a revoked token invalidates the entire user token family immediately (theft detection).
-- **Transport:** Delivered via `HttpOnly`, `SameSite=Strict`, `Secure` cookie or side panel extension secure storage.
-
 ---
 
 ## Endpoints
 
-### 1. Register User
+### 1. Auth Endpoints
 
-Creates a new user account and returns an authentication token.
-
+#### Register User
 - **Method:** `POST`
 - **Route:** `/api/auth/register`
 - **Authentication:** None (Anonymous)
 - **Status:** IMPLEMENTED
 
-#### Request Body
+##### Request Body
 ```json
 {
   "email": "user@example.com",
@@ -55,12 +48,7 @@ Creates a new user account and returns an authentication token.
 }
 ```
 
-#### Validation Rules
-- `email`: Required, valid email format, max 256 characters.
-- `password`: Required, minimum 8 characters, at least 1 uppercase, 1 lowercase, 1 digit, 1 special character.
-- `confirmPassword`: Required, must exactly match `password`.
-
-#### Response (200 OK)
+##### Response (200 OK)
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -70,28 +58,13 @@ Creates a new user account and returns an authentication token.
 }
 ```
 
-#### Response (400 Bad Request)
-Returned when input validation fails or if registration is rejected (account enumeration defense):
-```json
-{
-  "errors": [
-    "Password must be at least 8 characters long."
-  ]
-}
-```
-
----
-
-### 2. Login User
-
-Authenticates credentials and returns a signed JWT.
-
+#### Login User
 - **Method:** `POST`
 - **Route:** `/api/auth/login`
 - **Authentication:** None (Anonymous)
 - **Status:** IMPLEMENTED
 
-#### Request Body
+##### Request Body
 ```json
 {
   "email": "user@example.com",
@@ -99,7 +72,7 @@ Authenticates credentials and returns a signed JWT.
 }
 ```
 
-#### Response (200 OK)
+##### Response (200 OK)
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
@@ -109,26 +82,13 @@ Authenticates credentials and returns a signed JWT.
 }
 ```
 
-#### Response (401 Unauthorized)
-Returned uniformly whether the email does not exist or the password is incorrect (account enumeration defense):
-```json
-{
-  "message": "Invalid email or password."
-}
-```
-
----
-
-### 3. Current User Profile
-
-Retrieves the authenticated user's identity details from validated claims.
-
+#### Current User Profile
 - **Method:** `GET`
 - **Route:** `/api/auth/me`
 - **Authentication:** Required (`Bearer <token>`)
 - **Status:** IMPLEMENTED
 
-#### Response (200 OK)
+##### Response (200 OK)
 ```json
 {
   "userId": "d748f3e2-1234-4567-89ab-cdef01234567",
@@ -136,12 +96,100 @@ Retrieves the authenticated user's identity details from validated claims.
 }
 ```
 
-#### Response (401 Unauthorized)
-Returned if the `Authorization` header is missing, malformed, expired, or cryptographically tampered.
+---
+
+### 2. Sessions Endpoints (M4)
+
+#### Intake Problem Context (Get or Create Session)
+Ingests extracted webpage problem data, deduplicates/upserts the problem in the catalog, and returns the calling user's active session.
+
+- **Method:** `POST`
+- **Route:** `/api/sessions/context`
+- **Authentication:** Required (`Bearer <token>`)
+- **Status:** IMPLEMENTED
+
+##### Request Body
+```json
+{
+  "platform": 1,
+  "platformProblemId": "1",
+  "title": "Two Sum",
+  "slug": "two-sum",
+  "url": "https://leetcode.com/problems/two-sum/",
+  "difficulty": "Easy",
+  "description": "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target."
+}
+```
+
+##### Validation Rules
+- `platform`: Required, valid DSA platform enum (`1` for LeetCode).
+- `platformProblemId`: Required, 1–100 characters.
+- `title`: Required, 1–256 characters.
+- `slug`: Required, 1–256 characters (alphanumeric, dashes, underscores).
+- `url`: Required, valid absolute HTTP/HTTPS URL $\le$ 2048 characters.
+- `description`: Required, 10–20,000 characters.
+- `difficulty`: Optional, $\le$ 50 characters.
+
+##### Response (200 OK)
+```json
+{
+  "sessionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "userId": "d748f3e2-1234-4567-89ab-cdef01234567",
+  "problem": {
+    "id": "11111111-1111-1111-1111-111111111111",
+    "platform": 1,
+    "platformProblemId": "1",
+    "title": "Two Sum",
+    "slug": "two-sum",
+    "url": "https://leetcode.com/problems/two-sum/",
+    "description": "Given an array of integers nums...",
+    "difficulty": "Easy"
+  },
+  "currentLevel": 1,
+  "status": 1,
+  "startedAt": "2026-11-16T11:25:00.0000000Z",
+  "lastActivityAt": "2026-11-16T11:25:00.0000000Z"
+}
+```
+
+---
+
+#### Get Session By ID
+Retrieves session details by ID. Strictly filtered by the authenticated user's ID.
+
+- **Method:** `GET`
+- **Route:** `/api/sessions/{id}`
+- **Authentication:** Required (`Bearer <token>`)
+- **Status:** IMPLEMENTED
+
+##### Response (200 OK)
+Returns `ProblemSessionResponse`.
+
+##### Response (404 Not Found)
+Returned if the session does not exist **or belongs to another user** (preventing ID enumeration).
+
+---
+
+#### Get Active Session For Problem
+Queries whether the calling user currently has an active session for a specific problem.
+
+- **Method:** `GET`
+- **Route:** `/api/sessions/active?platform=1&platformProblemId=1`
+- **Authentication:** Required (`Bearer <token>`)
+- **Status:** IMPLEMENTED
+
+##### Query Parameters
+- `platform`: Integer (e.g. `1` for LeetCode)
+- `platformProblemId`: String (e.g. `"1"`)
+
+##### Response (200 OK)
+Returns `ProblemSessionResponse`.
+
+##### Response (404 Not Found)
+Returned if no active session exists for this user on the specified problem.
 
 ---
 
 ## Future Endpoints
-- **Problems & Sessions:** NOT IMPLEMENTED (M4)
 - **AI Hints:** NOT IMPLEMENTED (M5 & M6)
 - **Feedback & Preferences:** NOT IMPLEMENTED (M7)

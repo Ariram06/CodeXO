@@ -9,7 +9,7 @@
 | M2 | Database | IMPLEMENTED | `main` | `719c47e..a073149` | 2026-11-15 |
 | M2-CLEANUP | Database Refinements | IMPLEMENTED | `main` | `2831a96..79bd1f6` | 2026-11-16 |
 | M3 | Authentication | IMPLEMENTED | `main` | `306ef41..1cb12cb` | 2026-11-16 |
-| M4 | Problems + Sessions | NOT IMPLEMENTED | — | — | — |
+| M4 | Problems + Sessions | IMPLEMENTED | `main` | `bae5309..13eff64` | 2026-11-16 |
 | M5 | AI Layer | NOT IMPLEMENTED | — | — | — |
 | M6 | Hint Orchestration | NOT IMPLEMENTED | — | — | — |
 | M7 | Feedback + Preferences | NOT IMPLEMENTED | — | — | — |
@@ -322,3 +322,70 @@ dotnet test Codexo.slnx --verbosity normal
 ### Common Pitfalls
 - **SQL Server Error 1785 (Multiple Cascade Paths):** SQL Server does not permit multiple cascade delete paths leading to the same table. Always trace all foreign key paths and apply `Restrict` / `NoAction` to redundant paths.
 - **Leaking Secrets in Console/Logs:** Never print secret keys or configuration values during startup checks. Check key presence and length, and output only boolean indicators (`yes/no`).
+
+
+## M4: Problems + Sessions
+
+### What We Built
+We implemented problem context intake, catalog deduplication, and user study session lifecycle management in `Codexo.Infrastructure` and `Codexo.Api`. We established DTOs and contracts in `Codexo.Core` (`ProblemIntakeRequest`, `ProblemDto`, `ProblemSessionResponse`, and `ISessionService`). In `SessionService`, incoming problem statements from DSA platforms (such as LeetCode) are validated against strict length limits (with descriptions bounded up to 20,000 characters) and untrusted input constraints via FluentValidation. Problems are idempotently get-or-created by composite key `(Platform, PlatformProblemId)`, updating catalog text when details change. The service seamlessly retrieves or initializes the user's active session starting at `L1_Understand` and handles browser tab context switching without data corruption. Above all, **strict per-user data isolation** is enforced across all session endpoints, verified by integration tests proving User B receives `404 Not Found` when attempting to access User A's session.
+
+### Concepts
+- **Untrusted Input Defense & Content Bounding:** Content extracted from third-party web pages must be treated as untrusted user input. FluentValidation enforces strict structural rules (valid platform enum, URL format, title $\le$ 256 chars, description $\le$ 20,000 chars) to prevent payload-based denial of service or prompt-injection attacks. File: [src/Codexo.Api/Validators/ProblemIntakeRequestValidator.cs](file:///c:/Ariram/CodeXO/src/Codexo.Api/Validators/ProblemIntakeRequestValidator.cs).
+- **Catalog Upsert & Problem Deduplication:** DSA problems belong to a shared catalog identified by composite unique index `(Platform, PlatformProblemId)`. Multiple users studying the same problem share the single underlying `Problem` record while maintaining isolated `ProblemSession` records. File: [src/Codexo.Infrastructure/Services/SessionService.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Services/SessionService.cs).
+- **Per-User Isolation via Claims Principal:** User identity is never accepted from request query strings or bodies. The server extracts the authenticated `UserId` directly from the validated JWT claims (`ClaimTypes.NameIdentifier`). Every database query enforces `WHERE s.UserId == userId`. File: [src/Codexo.Api/Controllers/SessionsController.cs](file:///c:/Ariram/CodeXO/src/Codexo.Api/Controllers/SessionsController.cs).
+- **Enumeration Defense via 404 Responses:** When a user requests a session ID belonging to another user, the API returns `404 Not Found` rather than `403 Forbidden`. This conceals the existence of other users' session GUIDs from attackers. File: [src/Codexo.Api/Controllers/SessionsController.cs](file:///c:/Ariram/CodeXO/src/Codexo.Api/Controllers/SessionsController.cs).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Extension as Chrome Extension
+    participant API as SessionsController
+    participant Service as SessionService
+    participant DB as AppDbContext (SQL Server)
+
+    Extension->>API: POST /api/sessions/context (ProblemIntakeRequest) [Bearer Token]
+    Note over API: Extract authenticated UserId from JWT claims
+    API->>API: Validate request via ProblemIntakeRequestValidator
+    API->>Service: GetOrCreateSessionAsync(userId, request)
+    Service->>DB: Query Problems by (Platform, PlatformProblemId)
+    alt Problem Not in Catalog
+        Service->>DB: Insert new Problem
+    else Problem Exists & Details Changed
+        Service->>DB: Update Problem (Title, Description, Url)
+    end
+    Service->>DB: Query ProblemSessions for (UserId, ProblemId, Status == Active)
+    alt Active Session Exists
+        Service->>DB: Update LastActivityAt
+    else No Active Session
+        Service->>DB: Insert new ProblemSession (Level = L1_Understand, Status = Active)
+    end
+    Service-->>API: Return ProblemSessionResponse
+    API-->>Extension: 200 OK (Session details)
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Returned `404 Not Found` rather than `403 Forbidden` when accessing a cross-user session.
+  *Rejected alternative:* Returning `403 Forbidden`. While semantically descriptive, `403` informs an attacker that a resource ID exists in the system, opening an ID enumeration vulnerability.
+- **Decision:** Implemented `ISessionService` directly using `AppDbContext` without introducing a Generic Repository layer.
+  *Rejected alternative:* Creating `IProblemRepository` and `ISessionRepository`. Codexo Build Rules forbid adding an extra Repository abstraction over EF Core, which already acts as an in-memory repository and unit of work.
+- **Decision:** Bound problem description lengths to 20,000 characters.
+  *Rejected alternative:* Unbounded string inputs or tiny 1,000 character limits. Real DSA interview questions (e.g. text-heavy geometry or graph problems with long constraints) frequently exceed 2,000 characters, while 20,000 characters provides ample space while protecting database buffers.
+
+### Interview Questions & Model Answers
+- **Q: How does Codexo guarantee multi-tenant/per-user data isolation on study sessions?**
+  *A:* Multi-tenant data isolation is enforced at three levels: (1) Authentication: Endpoints require a valid JWT, and the user identity is extracted strictly from the cryptographically verified `NameIdentifier` claim, never from client-supplied request parameters. (2) Query filtering: Every database retrieval executes with an explicit `WHERE s.UserId == authenticatedUserId` clause. (3) Security responses: Requests attempting to read or manipulate records belonging to another user return `404 Not Found`, ensuring unauthorized users cannot even verify the existence of another user's session IDs.
+- **Q: How did you implement problem deduplication when thousands of users might study the same LeetCode problem?**
+  *A:* In our relational schema, `Problems` is a shared catalog table indexed with a unique composite constraint on `(Platform, PlatformProblemId)`. When a user requests hints, `SessionService` performs an idempotent upsert: if the problem exists, its record is reused and refreshed if text changed; if not, a new catalog entry is created. Each user's study session is then linked to that shared `ProblemId` via a separate `ProblemSession` record.
+- **Q: Why should webpage content extracted by a Chrome extension content script be treated as untrusted input?**
+  *A:* Web content scripts run in the DOM of arbitrary external websites. Malicious or compromised pages could inject arbitrary HTML, oversized payloads to induce memory exhaustion, or crafted text designed to manipulate downstream LLMs (prompt injection). Validating lengths, sanitizing formats, and enforcing strict input boundaries at the API gateway protects the database and AI pipeline.
+
+### Run & Test Commands
+```bash
+# Run all unit and integration tests (90 total)
+dotnet test Codexo.slnx --verbosity normal
+```
+
+### Common Pitfalls
+- **Accidental Cross-User Data Leaks:** Forgetting to filter by `UserId` when retrieving entities by GUID primary key (`context.ProblemSessions.FindAsync(id)`) allows any authenticated user to inspect another user's data if they obtain or guess the GUID. Always query with `FirstOrDefaultAsync(s => s.Id == id && s.UserId == userId)`.
+- **String Input Nullability & Whitespace:** DSA problem scrapers frequently return trailing whitespace or omitted difficulty fields. Always trim strings and provide fallback defaults (`"Unknown"`) before persistence.
