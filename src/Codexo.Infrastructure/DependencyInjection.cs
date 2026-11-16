@@ -1,9 +1,11 @@
 namespace Codexo.Infrastructure;
 
 using Codexo.Core.Auth;
+using Codexo.Core.Interfaces;
 using Codexo.Infrastructure.Auth;
 using Codexo.Infrastructure.Data;
 using Codexo.Infrastructure.Identity;
+using Codexo.Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -40,6 +42,9 @@ public static class DependencyInjection
 
         // Register TokenService
         services.AddScoped<ITokenService, TokenService>();
+
+        // Register SessionService
+        services.AddScoped<ISessionService, SessionService>();
 
         return services;
     }
