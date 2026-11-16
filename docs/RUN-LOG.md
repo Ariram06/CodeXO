@@ -11,8 +11,8 @@
 |--------|------|--------|--------------|--------|---------|-------|
 | M0–M6 | Scaffold through Hint Orchestration | VERIFIED | 123/123 | `main` | `896762b..0030874` | Fully implemented and verified green on main. |
 | M7 | Feedback + Preferences | VERIFIED | 131/131 | `feature/m7-feedback-preferences` | `458c492..5c389fc` | Feedback upserting, preference defaults, and cross-tenant 404 security fully verified. |
-| M8 | Hardening | IN PROGRESS | Pending | `feature/m8-hardening` | TBD | Starting autonomous execution. |
-| M9 | Extension Scaffold | PENDING | — | — | — | Planned. |
+| M8 | Hardening | VERIFIED | 134/134 | `feature/m8-hardening` | `03f8331..e680354` | RFC 7807 problem details, sanitized logging, targeted 6/min rate limiting, and /health verified. |
+| M9 | Extension Scaffold | IN PROGRESS | Pending | `feature/m9-extension-scaffold` | TBD | Starting autonomous execution. |
 | M10 | Content Script | PENDING | — | — | — | Planned. |
 | M11 | Side Panel UI | PENDING | — | — | — | Planned. |
 | M12 | Integration | PENDING | — | — | — | Planned. |

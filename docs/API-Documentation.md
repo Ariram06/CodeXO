@@ -1,6 +1,6 @@
 # Codexo — API Documentation
 
-> **Status:** IMPLEMENTED (M3 Authentication, M4 Problems & Sessions, M6 Hint Orchestration & Delivery, M7 Feedback & Preferences)
+> **Status:** IMPLEMENTED (M3 Authentication, M4 Problems & Sessions, M6 Hint Orchestration & Delivery, M7 Feedback & Preferences, M8 Hardening & Health)
 
 ## Base URL
 
@@ -430,5 +430,54 @@ Returns updated `UserPreferenceResponseDto`.
 
 ---
 
-## Future Endpoints
-- **Hardening & Health Monitoring:** NOT IMPLEMENTED (M8)
+### 5. Hardening & Health Monitoring Endpoints (M8)
+
+---
+
+#### System Health Check
+Anonymous health check reporting database connectivity and AI provider availability. Strictly checks presence without ever leaking API keys, connection strings, or secret values.
+
+- **Method:** `GET`
+- **Route:** `/health`
+- **Authentication:** Anonymous (`[AllowAnonymous]`)
+- **Status:** IMPLEMENTED
+
+##### Response (200 OK — Healthy)
+```json
+{
+  "status": "Healthy",
+  "timestamp": "2026-11-16T12:50:00.0000000Z",
+  "database": "Connected",
+  "ai": {
+    "provider": "Fake",
+    "model": "gemini-4-hydrogen",
+    "configured": true
+  }
+}
+```
+
+##### Response (503 Service Unavailable — Unhealthy)
+Returned if SQL Server connectivity fails or AI provider is unconfigured.
+
+---
+
+### 6. Standardized Error Handling (RFC 7807)
+
+All non-success responses emitted by the application or unhandled exception middleware adhere to the **RFC 7807 Problem Details** specification (`application/problem+json`):
+
+```json
+{
+  "status": 404,
+  "title": "Resource Not Found",
+  "detail": "Session 12345678-1234-1234-1234-123456789abc was not found for the authenticated user.",
+  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.4",
+  "instance": "/api/sessions/12345678-1234-1234-1234-123456789abc"
+}
+```
+
+- **400 Bad Request:** Validation failure, empty attempt, locked level.
+- **401 Unauthorized:** Missing or expired JWT Bearer token.
+- **404 Not Found:** Entity does not exist or belongs to another user (anti-enumeration).
+- **429 Too Many Requests:** Fixed-window rate limit (6 requests/minute) exceeded. Always includes `Retry-After: 60`.
+- **500 Internal Server Error:** Sanitized server error. Full traces logged to server logs; never sent to browser.
+- **503 Service Unavailable:** AI provider or database connectivity failure.

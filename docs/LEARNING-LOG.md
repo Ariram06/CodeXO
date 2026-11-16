@@ -13,7 +13,7 @@
 | M5 | AI Layer | IMPLEMENTED | `feature/m5-ai-layer` | `1f9f09f..6f149e0` | 2026-11-16 |
 | M6 | Hint Orchestration | IMPLEMENTED | `feature/m6-hint-orchestration` | `585069c..82331a9` | 2026-11-16 |
 | M7 | Feedback + Preferences | IMPLEMENTED | `feature/m7-feedback-preferences` | `458c492..5c389fc` | 2026-11-16 |
-| M8 | Hardening | NOT IMPLEMENTED | — | — | — |
+| M8 | Hardening | IMPLEMENTED | `feature/m8-hardening` | `03f8331..e680354` | 2026-11-16 |
 | M9 | Extension Scaffold | NOT IMPLEMENTED | — | — | — |
 | M10 | Content Script | NOT IMPLEMENTED | — | — | — |
 | M11 | Side Panel UI | NOT IMPLEMENTED | — | — | — |
@@ -625,3 +625,79 @@ dotnet test Codexo.slnx
 
 ### Common Pitfalls
 - **Unbounded Comment Lengths:** Unconstrained text fields allow payload flooding and database bloat. Strict FluentValidation rules (`MaximumLength(500)`) prevent abuse before hitting the database.
+
+
+## M8: Hardening
+
+### What We Built
+We hardened the backend for production reliability, security, and quota protection. We built RFC 7807 `ProblemDetails` global exception middleware (`GlobalExceptionMiddleware`), sanitized request logging (`RequestLoggingMiddleware`) that logs method, path, and duration without ever exposing tokens, passwords, or AI prompts, and an anonymous `/health` check reporting database and AI provider status without leaking secrets. We implemented configurable per-user rate limiting (default: 6 hint requests per minute partitioned by authenticated user ID) with audit logging and automatic `Retry-After: 60` headers on 429 rejections.
+
+### Concepts
+- **RFC 7807 Problem Details:** Standardized HTTP machine-readable error format (`application/problem+json`) containing status code, title, detail, type URL, and request instance path. Ensures frontends and extensions parse backend errors consistently. File: [src/Codexo.Api/Middleware/GlobalExceptionMiddleware.cs](file:///c:/Ariram/CodeXO/src/Codexo.Api/Middleware/GlobalExceptionMiddleware.cs).
+- **Targeted Endpoint Rate Limiting:** Applying rate limiting (`[EnableRateLimiting("HintPolicy")]`) exclusively to expensive AI generation endpoints (`POST /api/sessions/{id}/hints`), rather than the whole controller. Lightweight DB operations (checking status, submitting attempts, reading previous hints) are not starved by AI generation limits. File: [src/Codexo.Api/Controllers/HintsController.cs](file:///c:/Ariram/CodeXO/src/Codexo.Api/Controllers/HintsController.cs).
+- **Partitioned Per-User Throttling:** Using `RateLimitPartition.GetFixedWindowLimiter(userId, ...)` ensures that rate limits apply per authenticated user rather than globally or by shared NAT IP. One heavy user cannot exhaust API access for other students. File: [src/Codexo.Api/Program.cs](file:///c:/Ariram/CodeXO/src/Codexo.Api/Program.cs).
+- **Zero-Secret Diagnostic Health Monitoring:** The `/health` endpoint checks database connectivity (`CanConnectAsync`) and AI provider configuration status, reporting `"Healthy"` or `"Unhealthy"`, while strictly never outputting API keys, connection strings, or environment secrets. File: [src/Codexo.Api/Controllers/HealthController.cs](file:///c:/Ariram/CodeXO/src/Codexo.Api/Controllers/HealthController.cs).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Chrome Extension
+    participant Log as RequestLoggingMiddleware
+    participant Err as GlobalExceptionMiddleware
+    participant Auth as Authentication & Authorization
+    participant Rate as RateLimitingMiddleware (HintPolicy)
+    participant Ctrl as Controller / Endpoint
+
+    Client->>Log: HTTP Request
+    Log->>Err: Forward
+    Err->>Auth: Forward
+    Auth->>Auth: Authenticate JWT & Populate HttpContext.User
+    Auth->>Rate: Forward
+    alt Route has [EnableRateLimiting] & User Limit Exceeded (6/min)
+        Rate-->>Client: 429 Too Many Requests (Retry-After: 60, ProblemDetails)
+        Log->>Log: [RateLimit Audit] Log warning with UserId, ClientIp, ElapsedMs
+    else Rate Limit OK
+        Rate->>Ctrl: Invoke Action
+        alt Exception Thrown in Controller
+            Ctrl-->>Err: Throws Exception
+            Err->>Err: Map to RFC 7807 ProblemDetails & status code
+            Err-->>Client: ProblemDetails JSON (400/404/500/503)
+        else Normal Execution
+            Ctrl-->>Client: 200 OK Response
+        end
+        Log->>Log: Log HTTP Method, Path, StatusCode, ElapsedMs (No Secrets)
+    end
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Targeted `[EnableRateLimiting]` on `RequestNextHint` rather than the entire `HintsController`.
+  *Rejected alternative:* Applying rate limiting globally to the controller. A student checking hint status or submitting an attempt notes should never be locked out simply because they recently requested a hint.
+- **Decision:** Positioned `UseAuthentication` before `UseRateLimiter`.
+  *Rejected alternative:* Default template order where `UseRateLimiter` runs before `UseAuthentication`. Partitioning rate limits per user requires `HttpContext.User` to be populated by the JWT middleware first.
+- **Decision:** RFC 7807 `application/problem+json` formatting for all middleware-handled errors.
+  *Rejected alternative:* Custom ad-hoc error shapes (`{ message = "error" }`). Standardizing on ProblemDetails allows clients to programmatically handle error types reliably.
+
+### Interview Questions & Model Answers
+- **Q: Why must `app.UseAuthentication()` precede `app.UseRateLimiter()` when using user-partitioned rate limits?**
+  *A:* In ASP.NET Core, middleware executes in pipeline registration order. If `UseRateLimiter` is registered before `UseAuthentication`, `HttpContext.User` is unauthenticated (anonymous) when the rate limiter policy executes. The limiter would either fall back to IP-based rate limiting (which penalizes all users behind a shared proxy or university NAT) or lump all users into a single anonymous partition. Registering `UseAuthentication` first ensures claims (like `sub` or `NameIdentifier`) are available to partition rate limits accurately per user.
+- **Q: What is the security advantage of an anonymous `/health` check that verifies database and AI provider status without leaking configuration values?**
+  *A:* Health endpoints are frequently probed by load balancers, orchestrators, and uptime monitors without authentication. If a health endpoint echoes connection strings, database names, or API key prefixes, it provides an information disclosure vector for reconnaissance attacks. Checking boolean presence (`configured: true`) and connectivity (`database: "Connected"`) confirms operational readiness without disclosing sensitive infrastructure details.
+
+### Teach-back (for Ariram)
+1. **Q: Why is it critical to apply rate limiting specifically to the `RequestNextHint` endpoint rather than the entire `HintsController`?**
+   *Model Answer:* `RequestNextHint` is the only endpoint that triggers expensive LLM calls to Gemini and consumes quota. Endpoints like `SubmitAttempt`, `GetSessionHints`, and `GetSessionHintStatus` are lightweight database queries. If the entire controller were rate-limited to 6 requests/minute, a user progressing through an attempt submission and status check would prematurely exhaust their quota before they could receive their hint.
+2. **Q: How does `GlobalExceptionMiddleware` ensure that internal server errors (500) do not leak sensitive information to the client?**
+   *Model Answer:* For unhandled exceptions, the middleware logs full exception details and stack traces to secure server-side logs (`ILogger`), but writes a sanitized RFC 7807 `ProblemDetails` object to the HTTP response with a generic detail message (*"An internal server error occurred. Please try again later."*), preventing database schemas, server paths, or internal code details from reaching the browser.
+
+### Run & Test Commands
+```bash
+# Run hardening integration tests (3 tests)
+dotnet test tests/Codexo.Api.IntegrationTests/Codexo.Api.IntegrationTests.csproj --filter "HardeningTests"
+
+# Run entire backend test suite (134 tests)
+dotnet test Codexo.slnx
+```
+
+### Common Pitfalls
+- **Logging Sensitive Headers:** Standard request logging can inadvertently capture `Authorization: Bearer <token>` or passwords in request bodies. Keep request logging high-level (Method, Path, StatusCode, Duration) and log request bodies only on specific whitelisted, sanitized debug endpoints.
