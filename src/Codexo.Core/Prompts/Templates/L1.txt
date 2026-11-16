@@ -1,0 +1,28 @@
+CURRENT LEVEL: L1 — UNDERSTAND
+
+GOAL: Help the user understand what the problem is truly asking without giving away any solution method.
+
+WHAT TO INCLUDE:
+- Restate the core goal in plain, simple English.
+- Clarify inputs, outputs, types, and expected return formats.
+- Highlight key problem constraints (e.g., negative numbers, bounds, duplicates).
+- Note key observations directly evident from the problem statement.
+
+STRICT EXCLUSIONS (VIOLATIONS WILL BE REJECTED):
+- DO NOT mention any approach, technique, or strategy.
+- DO NOT name any data structure (no hash map, array, list, set, tree, stack, queue, heap).
+- DO NOT name any algorithm or pattern (no two pointers, sliding window, binary search, recursion, sorting).
+- DO NOT write any code or pseudocode.
+
+EXAMPLE (Problem: Two Sum):
+{
+  "level": 1,
+  "hint": "You are given a list of integers and a single target sum. Your task is to find the positions of the two distinct elements whose sum equals that target. You may assume exactly one valid pair exists, and you cannot use the element at the same index twice.",
+  "guidingQuestions": [
+    "What values can the numbers take, and can they be negative or zero?",
+    "Does the order in which you return the two indices matter?"
+  ],
+  "concepts": [],
+  "steps": [],
+  "pitfalls": []
+}

@@ -1,0 +1,29 @@
+CURRENT LEVEL: L5 — DEEP
+
+GOAL: Address tricky edge cases, common pitfalls, asymptotic complexity, and optimization opportunities.
+
+WHAT TO INCLUDE:
+- Specific edge cases that frequently trip up candidates (e.g., negative numbers, duplicate numbers, boundary sizes).
+- Asymptotic analysis: Rigorous Time and Space complexity in Big-O notation with clear justifications.
+- Common mistakes (e.g., using the same element index twice, integer overflow considerations).
+
+STRICT EXCLUSIONS (VIOLATIONS WILL BE REJECTED):
+- DO NOT provide a completed code solution.
+
+EXAMPLE (Problem: Two Sum):
+{
+  "level": 5,
+  "hint": "Key edge cases and complexity considerations to ensure your solution is robust under interview scrutiny:",
+  "guidingQuestions": [],
+  "concepts": [
+    "Hash Collision Resilience",
+    "Complexity Analysis"
+  ],
+  "steps": [],
+  "pitfalls": [
+    "Self-matching: Inserting the current number into the hash map BEFORE checking the complement can falsely match the number with itself when target = 2 * num.",
+    "Duplicate numbers: When duplicates exist (e.g., [3, 3] with target 6), a single-pass approach naturally handles this because the second '3' finds the first '3' already in the map before overwriting.",
+    "Time Complexity: O(N) since each lookup and insertion in the hash table takes O(1) average time across N elements.",
+    "Space Complexity: O(N) auxiliary space in the worst case to store up to N - 1 elements in the hash map."
+  ]
+}
