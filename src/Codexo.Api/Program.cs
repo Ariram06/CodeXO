@@ -1,9 +1,14 @@
+using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
+using System.Threading.RateLimiting;
+using Codexo.Api.Middleware;
 using Codexo.Api.Validators;
 using Codexo.Infrastructure;
 using Codexo.Infrastructure.Data;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 
@@ -54,19 +59,51 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// Configure Rate Limiting
+// Configure Configurable Per-User Rate Limiting
+var permitLimitPerMinute = builder.Configuration.GetValue<int>("RateLimiting:PermitLimitPerMinute", 6);
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddFixedWindowLimiter("HintPolicy", opt =>
+    options.OnRejected = async (context, token) =>
     {
-        opt.Window = TimeSpan.FromMinutes(1);
-        opt.PermitLimit = 30;
-        opt.QueueLimit = 0;
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.HttpContext.Response.Headers.RetryAfter = "60";
+        context.HttpContext.Response.ContentType = "application/problem+json";
+        var problem = new ProblemDetails
+        {
+            Status = StatusCodes.Status429TooManyRequests,
+            Title = "Too Many Requests",
+            Detail = "Rate limit exceeded. Please wait a minute before requesting another hint.",
+            Type = "https://tools.ietf.org/html/rfc6585#section-4",
+            Instance = context.HttpContext.Request.Path
+        };
+        await context.HttpContext.Response.WriteAsync(JsonSerializer.Serialize(problem), token);
+    };
+
+    options.AddPolicy("HintPolicy", httpContext =>
+    {
+        var userId = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? httpContext.User.FindFirst("sub")?.Value
+            ?? httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            userId,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = permitLimitPerMinute,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            });
     });
 });
 
 var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+app.UseMiddleware<RequestLoggingMiddleware>();
+app.UseMiddleware<GlobalExceptionMiddleware>();
 
 // Seed database on startup in development
 if (app.Environment.IsDevelopment())
@@ -76,11 +113,10 @@ if (app.Environment.IsDevelopment())
     await DbInitializer.SeedAsync(dbContext, app.Environment.IsDevelopment());
 }
 
-// Configure the HTTP request pipeline.
 app.UseHttpsRedirection();
-app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.MapControllers();
 
 app.Run();

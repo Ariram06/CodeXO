@@ -11,7 +11,6 @@ using Microsoft.AspNetCore.RateLimiting;
 
 [Authorize]
 [ApiController]
-[EnableRateLimiting("HintPolicy")]
 public class HintsController : ControllerBase
 {
     private readonly IHintService _hintService;
@@ -28,8 +27,10 @@ public class HintsController : ControllerBase
     /// <summary>
     /// Requests the next sequential hint for the active DSA problem session.
     /// Server is authoritative for hint level; gating requires an accepted attempt for L2+.
+    /// Rate limited per user to prevent Gemini quota exhaustion.
     /// </summary>
     [HttpPost("api/sessions/{sessionId:guid}/hints")]
+    [EnableRateLimiting("HintPolicy")]
     public async Task<IActionResult> RequestNextHint(
         Guid sessionId,
         CancellationToken cancellationToken)
