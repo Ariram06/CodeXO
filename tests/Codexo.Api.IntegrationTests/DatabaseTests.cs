@@ -23,7 +23,7 @@ public class DatabaseTests : IClassFixture<WebApplicationFactory<Program>>
         using var scope = _factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        await DbInitializer.SeedAsync(context);
+        await DbInitializer.SeedAsync(context, isDevelopment: true);
 
         var problems = await context.Problems.OrderBy(p => p.Title).ToListAsync();
 
@@ -39,9 +39,9 @@ public class DatabaseTests : IClassFixture<WebApplicationFactory<Program>>
         using var scope = _factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        await DbInitializer.SeedAsync(context);
+        await DbInitializer.SeedAsync(context, isDevelopment: true);
 
-        var pref = await context.UserPreferences.FirstOrDefaultAsync(p => p.UserId == "seed-user-1");
+        var pref = await context.UserPreferences.FirstOrDefaultAsync(p => p.UserId == DbInitializer.DevPlaceholderUserId);
 
         Assert.NotNull(pref);
         Assert.Equal("C#", pref.PreferredLanguage);
@@ -54,7 +54,7 @@ public class DatabaseTests : IClassFixture<WebApplicationFactory<Program>>
         using var scope = _factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        await DbInitializer.SeedAsync(context);
+        await DbInitializer.SeedAsync(context, isDevelopment: true);
 
         // Attempt to insert duplicate (Platform.LeetCode, "1")
         var duplicateProblem = new Problem
@@ -78,12 +78,78 @@ public class DatabaseTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task Problem_Delete_WithExistingSessions_ThrowsDbUpdateException_DueToRestrict()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        await DbInitializer.SeedAsync(context, isDevelopment: true);
+
+        // Create a standalone problem and a linked session
+        var uniqueId = Guid.NewGuid().ToString("N");
+        var testProblem = new Problem
+        {
+            Id = Guid.NewGuid(),
+            Platform = Platform.LeetCode,
+            PlatformProblemId = $"restrict-{uniqueId}",
+            Title = $"Restrict Test Problem {uniqueId}",
+            Slug = $"restrict-test-{uniqueId}",
+            Url = $"https://leetcode.com/problems/restrict-test-{uniqueId}",
+            Difficulty = "Medium",
+            Description = "Testing restrict delete behavior."
+        };
+
+        var linkedSession = new ProblemSession
+        {
+            Id = Guid.NewGuid(),
+            UserId = "restrict-test-user",
+            ProblemId = testProblem.Id,
+            CurrentLevel = HintLevel.L1_Understand,
+            Status = SessionStatus.Active
+        };
+
+        context.Problems.Add(testProblem);
+        context.ProblemSessions.Add(linkedSession);
+        await context.SaveChangesAsync();
+
+        // Detach tracked entities so EF Core delegates foreign key check to the database
+        context.ChangeTracker.Clear();
+
+        var trackedProblem = await context.Problems.FindAsync(testProblem.Id);
+        Assert.NotNull(trackedProblem);
+
+        // Attempting to delete the Problem while ProblemSession references it MUST fail in database (Restrict / NO ACTION)
+        context.Problems.Remove(trackedProblem);
+
+        await Assert.ThrowsAsync<DbUpdateException>(async () =>
+        {
+            await context.SaveChangesAsync();
+        });
+
+        // Cleanup: remove session first, then problem succeeds
+        context.ChangeTracker.Clear();
+        var sessionToDelete = await context.ProblemSessions.FindAsync(linkedSession.Id);
+        if (sessionToDelete != null)
+        {
+            context.ProblemSessions.Remove(sessionToDelete);
+            await context.SaveChangesAsync();
+        }
+
+        var problemToDelete = await context.Problems.FindAsync(testProblem.Id);
+        if (problemToDelete != null)
+        {
+            context.Problems.Remove(problemToDelete);
+            await context.SaveChangesAsync();
+        }
+    }
+
+    [Fact]
     public async Task ProblemSession_CascadeDeletes_HintsAndAttempts()
     {
         using var scope = _factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        await DbInitializer.SeedAsync(context);
+        await DbInitializer.SeedAsync(context, isDevelopment: true);
 
         var problem = await context.Problems.FirstAsync();
         var session = new ProblemSession
