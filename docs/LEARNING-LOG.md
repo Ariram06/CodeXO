@@ -18,7 +18,15 @@
 | M10 | Content Script | NOT IMPLEMENTED | — | — | — |
 | M11 | Side Panel UI | NOT IMPLEMENTED | — | — | — |
 | M12 | Integration | NOT IMPLEMENTED | — | — | — |
-| M13 | Release | NOT IMPLEMENTED | — | — | — |
+| M13 | Release | IMPLEMENTED | `main` | `4c70a0b` | 2026-11-16 |
+| C1 | Chat Core (Backend) | IMPLEMENTED | `main` | `1b1c3e3` | 2026-11-16 |
+| C2 | Real Gemini for Chat | NOT IMPLEMENTED | — | — | — |
+| C3 | Minimal Chat UI | NOT IMPLEMENTED | — | — | — |
+| C4 | Context Collection | NOT IMPLEMENTED | — | — | — |
+| C5 | Streaming | NOT IMPLEMENTED | — | — | — |
+| C6 | UI Polish | NOT IMPLEMENTED | — | — | — |
+| C7 | History, Settings, Privacy | NOT IMPLEMENTED | — | — | — |
+| C8 | Hardening, Docs, Release | NOT IMPLEMENTED | — | — | — |
 
 ---
 
@@ -1049,3 +1057,59 @@ npm --prefix extension test -- --watch=false
 
 ### Common Pitfalls
 - **Angular 17+ / 21 `browser/` Subdirectory in Manifest V3:** Angular's `@angular/build:application` defaults to writing to `outputPath/browser`. Forgetting to align `side_panel.default_path` in `manifest.json` causes Chrome to fail opening the side panel. Always ensure `manifest.json` points to `sidepanel/browser/index.html`.
+
+
+---
+
+## C1: Chat Core (Backend, Non-Streaming)
+
+### What We Built
+We executed the Chat Pivot architectural shift: removed the 5-level hint ladder, Solution Guard, and all seeded benchmark problems. We established the `Conversation` and `Message` entities with EF Core migration `DropHintTablesAndAddChat`, configured server-side secret redaction via `SecretRedactor`, implemented prompt injection defense in `ChatPromptBuilder` + `Chat.txt`, and added `POST /api/chat/messages` with authentication and rate limiting (`ChatPolicy`).
+
+### Concepts
+- **Data Minimization:** To protect developer privacy and avoid intellectual property exposure, `Message` entities persist only conversation dialog and context *metadata* (platform, host, title, language, code line count, truncation flags). Raw code and page text are processed in memory and never stored in the database. File: [src/Codexo.Core/Entities/MessageContextMetadata.cs](file:///c:/Ariram/CodeXO/src/Codexo.Core/Entities/MessageContextMetadata.cs).
+- **Prompt Injection Defense via Structural Data Fencing:** Malicious code or page text could instruct the LLM to ignore system directives. We wrap all incoming code and page statements in fenced `=== [DATA ONLY] ===` delimiters and explicitly direct the model that context is raw input data, not system instructions. File: [src/Codexo.Core/Prompts/ChatPromptBuilder.cs](file:///c:/Ariram/CodeXO/src/Codexo.Core/Prompts/ChatPromptBuilder.cs).
+- **Context Window History Slicing:** To maintain coherent conversations within token budget, `ChatPromptBuilder` strictly formats the last 12 historical turns, pruning older turns server-side. File: [src/Codexo.Core/Prompts/ChatPromptBuilder.cs](file:///c:/Ariram/CodeXO/src/Codexo.Core/Prompts/ChatPromptBuilder.cs).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Sidepanel Client
+    participant API as ChatController
+    participant Svc as ChatService
+    participant DB as AppDbContext
+    participant PB as ChatPromptBuilder
+    participant AI as IAiClient (Fake / Gemini)
+
+    User->>API: POST /api/chat/messages {conversationId?, message, context}
+    API->>Svc: SendMessageAsync(userId, request)
+    Svc->>Svc: Redact API keys and tokens in context
+    Svc->>DB: Save User Message (Metadata only, no raw code)
+    Svc->>PB: BuildSystemPrompt() + FormatHistory(last 12) + BuildUserPrompt()
+    PB-->>Svc: Fenced Prompt
+    Svc->>AI: GenerateChatResponseAsync(system, history, user)
+    AI-->>Svc: Assistant Markdown Response
+    Svc->>DB: Save Assistant Message (Metadata only)
+    Svc-->>API: ChatMessageResponse
+    API-->>User: 200 OK
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Stored `MessageContextMetadata` as an EF Core owned entity with dedicated scalar columns (`ContextPlatform`, `ContextHost`, `ContextCodeLineCount`).
+  *Rejected alternative:* Storing raw JSON string in a single column. Relational scalar columns enable fast indexing, database independence (SQL Server, SQLite, Postgres), and type safety without JSON serialization overhead.
+- **Decision:** Distinct instances of owned entity metadata per message.
+  *Rejected alternative:* Reusing a single `Metadata` object reference between user and assistant messages. EF Core's change tracker strictly forbids sharing an owned entity instance across multiple parent entities.
+
+### Interview Questions & Model Answers
+- **Q: Why does Codexo sanitize and redact secrets on both client and server before sending context to an AI model?**
+  *A:* Defense-in-depth. A developer might accidentally have production API keys, database credentials, or Bearer tokens in their open editor buffer. Client-side redaction prevents secrets from ever leaving the browser, while server-side redaction ensures that even direct API calls or compromised extensions cannot inadvertently transmit credentials to third-party LLM providers.
+- **Q: How does the backend prevent user-supplied problem text from overriding system instructions (prompt injection)?**
+  *A:* By segregating system instructions from user-supplied data using explicit block delimiters (`=== [ACTIVE PAGE CONTEXT (DATA ONLY)] ===`) and explicitly instructing the model in `Chat.txt` that anything inside these blocks is untrusted user data to analyze, never directives to follow.
+
+### Run & Test Commands
+```powershell
+dotnet build Codexo.slnx
+dotnet test tests\Codexo.Core.Tests
+dotnet test tests\Codexo.Api.IntegrationTests
+```
