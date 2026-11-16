@@ -18,16 +18,34 @@ import {
   providedIn: 'root',
 })
 export class ApiClientService {
-  private baseUrl = 'https://localhost:7001';
+  private baseUrl = 'http://localhost:5275';
   readonly token = signal<string | null>(null);
   readonly currentUser = signal<string | null>(null);
 
   constructor(private http: HttpClient) {
     this.restoreToken();
+    this.restoreBaseUrl();
+  }
+
+  getBaseUrl(): string {
+    return this.baseUrl;
   }
 
   setBaseUrl(url: string): void {
     this.baseUrl = url.replace(/\/$/, '');
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.set({ codexo_api_url: this.baseUrl });
+    }
+  }
+
+  private restoreBaseUrl(): void {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.get(['codexo_api_url'], (result) => {
+        if (result?.['codexo_api_url']) {
+          this.baseUrl = String(result['codexo_api_url']).replace(/\/$/, '');
+        }
+      });
+    }
   }
 
   setToken(token: string, email?: string): void {
@@ -95,7 +113,11 @@ export class ApiClientService {
 
   register(email: string, password: string): Observable<AuthResponse> {
     return this.http
-      .post<AuthResponse>(`${this.baseUrl}/api/auth/register`, { email, password })
+      .post<AuthResponse>(`${this.baseUrl}/api/auth/register`, {
+        email,
+        password,
+        confirmPassword: password,
+      })
       .pipe(
         tap((res) => {
           this.setToken(res.token, res.email);
@@ -111,6 +133,7 @@ export class ApiClientService {
         platform: problem.platform,
         platformProblemId: problem.platformProblemId,
         title: problem.title,
+        slug: problem.slug || problem.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'problem',
         url: problem.url,
         difficulty: problem.difficulty,
         description: problem.description,
@@ -148,7 +171,9 @@ export class ApiClientService {
   ): Observable<SubmitAttemptResponse> {
     return this.http.post<SubmitAttemptResponse>(
       `${this.baseUrl}/api/sessions/${sessionId}/attempts`,
-      request,
+      {
+        attemptText: request.attemptContent || (request as any).attemptText || '',
+      },
       { headers: this.getAuthHeaders() }
     );
   }

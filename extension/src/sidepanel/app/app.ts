@@ -202,7 +202,12 @@ export class App {
       },
       error: (err) => {
         this.isLoading.set(false);
-        this.authError.set(err?.error?.detail || 'Invalid email or password.');
+        if (err?.status === 0) {
+          this.authError.set(`Cannot connect to API server at ${this.api.getBaseUrl()}. Is the backend running?`);
+        } else {
+          const serverMsg = err?.error?.message || (err?.error?.errors && err.error.errors[0]) || err?.error?.detail;
+          this.authError.set(serverMsg || 'Invalid email or password.');
+        }
       },
     });
   }
@@ -219,7 +224,12 @@ export class App {
       },
       error: (err) => {
         this.isLoading.set(false);
-        this.authError.set(err?.error?.detail || 'Registration failed.');
+        if (err?.status === 0) {
+          this.authError.set(`Cannot connect to API server at ${this.api.getBaseUrl()}. Is the backend running?`);
+        } else {
+          const serverMsg = err?.error?.message || (err?.error?.errors && err.error.errors[0]) || err?.error?.detail;
+          this.authError.set(serverMsg || 'Registration failed.');
+        }
       },
     });
   }
