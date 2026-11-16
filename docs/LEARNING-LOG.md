@@ -909,3 +909,74 @@ npm --prefix extension run build
 
 ### Common Pitfalls
 - **`chrome.storage.local.get` Type Inference:** TypeScript may type `result[key]` as `{}` rather than `any` or `string`. Explicit casting (`String(result['codexo_token'])`) prevents `TS2345: Argument of type '{}' is not assignable to parameter of type 'string'`.
+
+
+## M12: Integration & Error Handling
+
+### What We Built
+We integrated the full end-to-end Codexo system across all boundaries: DOM scraping on LeetCode HTML fixtures, message dispatch to the background service worker, reactive state synchronization in the Angular side panel, and HTTP API execution through ASP.NET Core Web API, EF Core Code First, and the pedagogical AI pipeline. We authored an end-to-end integration test suite in `extension/src/sidepanel/app/integration.spec.ts` (verifying happy-path ladder advancement, network outages, and 429 rate limit notifications) and a contract test suite in `tests/Codexo.Api.IntegrationTests/EndToEndContractTests.cs` (verifying registration, session intake, attempt gating, feedback ratings, user preferences, and unauthenticated protection).
+
+### Concepts
+- **Cross-Boundary Contract Alignment:** Frontend TypeScript DTO interfaces (`ProblemContextPayload`, `ProblemSessionResponse`, `HintResponseDto`, `SubmitAttemptRequest`) match backend C# records (`ProblemIntakeRequest`, `ProblemSessionResponse`, `HintResponseDto`, `SubmitAttemptRequestDto`), eliminating serialization drift across the HTTP boundary. File: [tests/Codexo.Api.IntegrationTests/EndToEndContractTests.cs](file:///c:/Ariram/CodeXO/tests/Codexo.Api.IntegrationTests/EndToEndContractTests.cs).
+- **Comprehensive Error Resilience (429 / 503 / Network Down):** The side panel wraps all asynchronous HTTP calls with explicit error handlers. When the API is offline or returns an RFC 7807 problem detail (such as 429 rate limit with `Retry-After: 60`), the UI displays a clean banner without losing the user's attempt draft or crashing the side panel. File: [extension/src/sidepanel/app/integration.spec.ts](file:///c:/Ariram/CodeXO/extension/src/sidepanel/app/integration.spec.ts).
+- **Opt-In Live Network Gating for CI/Offline Safety:** Integration tests that hit public LLM endpoints (like Google Gemini) are strictly gated (`RUN_LIVE_TESTS=true` or `AI:RunLiveSmokeTest=true`). Standard automated CI/CD runs execute exclusively against deterministic mocks (`FakeAiClient`), guaranteeing 100% offline pass rates and immunity from transient external cloud provider outages. File: [tests/Codexo.Api.IntegrationTests/AI/AiEvaluationHarness.cs](file:///c:/Ariram/CodeXO/tests/Codexo.Api.IntegrationTests/AI/AiEvaluationHarness.cs).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Learner as Learner
+    participant Page as LeetCode Webpage
+    participant Ext as Content Script & Service Worker
+    participant SP as Side Panel (Angular SPA)
+    participant API as Codexo.Api (ASP.NET Core)
+    participant AI as IAiClient (Gemini / Fake)
+
+    Page->>Ext: DOM Mutates (Two Sum)
+    Ext->>SP: Broadcast ProblemDetected
+    SP->>API: POST /api/sessions/context (Intake problem)
+    API-->>SP: 200 OK (Session L1 active)
+    SP->>API: POST /api/sessions/{id}/hints
+    API->>AI: Generate L1 Hint
+    AI-->>API: Hint with Observations & Guiding Questions
+    API-->>SP: 200 OK (L1 Hint DTO)
+    SP->>SP: Render L1 Card in Hint Ladder
+    Learner->>SP: Enters attempt notes & clicks Submit
+    SP->>API: POST /api/sessions/{id}/attempts (Attempt text)
+    API-->>SP: 200 OK (Attempt approved, L2 unlocked)
+    SP->>API: POST /api/sessions/{id}/hints
+    API->>AI: Generate L2 Direction Hint
+    AI-->>API: Hint with Pattern Clues
+    API-->>SP: 200 OK (L2 Hint DTO)
+    SP->>SP: Render L2 Card & Feedback Controls
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Gated live cloud AI smoke tests behind `RUN_LIVE_TESTS=true`.
+  *Rejected alternative:* Running live Gemini API calls on every test run. External LLM endpoints experience intermittent 503 high-demand spikes and rate limits; offline test suites must execute fast, deterministically, and with zero network dependency.
+- **Decision:** Unified error banner in side panel for network, 429, and 500 errors.
+  *Rejected alternative:* Showing native browser `alert()` popups or unhandled console errors. In-panel error banners preserve user context and allow seamless retry.
+
+### Interview Questions & Model Answers
+- **Q: How do you design an end-to-end integration test suite for a Chrome Extension communicating with a backend API?**
+  *A:* We decouple testing into two complementary layers: (1) In the extension frontend (Vitest/JSDOM), we feed recorded HTML fixtures into the content script extractor, route the resulting payload through the background messaging mock to the Angular side panel, and verify that the Angular components trigger the correct HTTP client requests and reactively update their Signals. (2) On the backend (ASP.NET Core `WebApplicationFactory`), contract tests execute the identical sequence of HTTP requests—from user registration and problem intake to attempt submission, hint unlocking, and preference updates—against the live in-memory API pipeline.
+- **Q: How does Codexo protect its CI/CD pipeline from transient failures in third-party LLM providers?**
+  *A:* By implementing provider independence via `IAiClient`. In our CI/CD pipeline and offline test suite, the dependency injection container registers `FakeAiClient`, which provides deterministic, schema-compliant hint responses. Live provider tests (calling `OpenAiCompatibleAiClient` against Gemini) are isolated in an opt-in smoke test requiring explicit environment flags (`RUN_LIVE_TESTS=true`), ensuring builds remain 100% green regardless of external cloud outages.
+
+### Teach-back (for Ariram)
+1. **Q: Why should end-to-end contract tests verify HTTP status codes and error shapes (like 400 Bad Request on premature hint requests) rather than only happy paths?**
+   *Model Answer:* Pedagogical guardrails like attempt-gating and rate-limiting are core security and business rules. If a client could bypass attempt-gating to fetch hints prematurely, the learning value of the product would be compromised. Contract tests must verify that the server strictly enforces these invariants and returns structured RFC 7807 problem details.
+2. **Q: What is the benefit of keeping recorded DOM fixtures in the repository for scraper testing?**
+   *Model Answer:* External websites frequently update their DOM class names and layout. Having version-controlled HTML fixtures allows unit and integration tests to run instantly, deterministically, and offline without requiring network access to third-party servers or managing fragile headless browser sessions in CI.
+
+### Run & Test Commands
+```bash
+# Run all extension unit and integration tests (25 tests)
+npm --prefix extension test -- --watch=false
+
+# Run all backend unit and integration tests (136 tests)
+dotnet test Codexo.slnx
+```
+
+### Common Pitfalls
+- **Missing Required DTO Properties in Integration Tests:** When constructing complex records (such as `ProblemIntakeRequest`), omitting required properties (e.g. `Slug`) causes compile-time errors `CS7036`. Always verify constructor signatures when authoring contract tests.

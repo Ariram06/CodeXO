@@ -15,8 +15,8 @@
 | M9 | Extension Scaffold | VERIFIED | 4/4 (Ext), 134/134 (.NET) | `feature/m9-extension-scaffold` | `feature/m9-extension-scaffold` | Manifest V3, dual build pipeline, typed messaging router, Signals-based Angular bridge service. |
 | M10 | Content Script | VERIFIED | 11/11 (Ext), 134/134 (.NET) | `feature/m10-content-script` | `feature/m10-content-script` | Resilient multi-selector LeetCode scraper, DOM sanitization, SPA MutationObserver, 7 extractor tests. |
 | M11 | Side Panel UI | VERIFIED | 22/22 (Ext), 134/134 (.NET) | `feature/m11-side-panel-ui` | `feature/m11-side-panel-ui` | Standalone Angular components: Banner, Hint Ladder, Attempt Gating, Feedback, Preferences, Auth. |
-| M12 | Integration | IN PROGRESS | Pending | `feature/m12-integration` | TBD | Starting end-to-end integration and smoke verification. |
-| M13 | Release | PENDING | — | — | — | Planned. |
+| M12 | Integration | VERIFIED | 25/25 (Ext), 136/136 (.NET) | `feature/m12-integration` | `feature/m12-integration` | Full multi-tier pipeline: DOM scrape -> Service Worker -> Sidepanel -> API -> AI -> Ladder; error recovery verified. |
+| M13 | Release | IN PROGRESS | Pending | `feature/m13-release` | TBD | Authoring GitHub Actions release workflows and extension zip packaging. |
 
 ---
 
@@ -38,6 +38,10 @@
   - *What:* Reactivity powered by `signal<T>`, `input<T>`, `output<T>` and synchronous hydration from extension storage.
   - *Why:* Guarantees session persistence across side panel closures and zero Zone.js change-detection overhead.
   - *Alternative rejected:* Manual RxJS subscription piping or temporary in-memory-only token state.
+- **Decision 5 (M12 Live Cloud AI Test Gating):** Enforced opt-in gating (`RUN_LIVE_TESTS=true`) for live Gemini network tests.
+  - *What:* Gated `LiveGeminiSmokeTest` while keeping `EndToEndContractTests` running against offline mock client.
+  - *Why:* Public LLM endpoints experience intermittent 503 high-demand spikes; offline test suites must run fast and deterministically.
+  - *Alternative rejected:* Allowing live network calls during routine local or CI test runs.
 
 ---
 
