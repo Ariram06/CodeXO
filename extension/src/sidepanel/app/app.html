@@ -1,32 +1,124 @@
-<div class="codexo-shell">
-  <header class="codexo-header">
-    <div class="header-content">
-      <h1>Codexo</h1>
-      <p class="subtitle">Progressive DSA Hints</p>
+<div class="sidepanel-container">
+  <!-- Extension Top Header -->
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-icon">⚡</span>
+      <h1 class="brand-name">{{ title }}</h1>
+      <span class="brand-tag">DSA Mentor</span>
     </div>
-    <div class="bridge-status" [class.connected]="bridge.isBridgeConnected()">
-      <span class="status-dot"></span>
-      <span class="status-text">
-        {{ bridge.isBridgeConnected() ? 'Connected' : 'Ready' }}
-      </span>
+    <div class="header-actions">
+      <div
+        class="connection-badge"
+        [class.connected]="bridge.isBridgeConnected()"
+        [title]="bridge.isBridgeConnected() ? 'Service worker connected' : 'Connecting...'"
+      >
+        <span class="dot"></span>
+        <span class="status-label">{{ bridge.isBridgeConnected() ? 'Live' : 'Offline' }}</span>
+      </div>
+      @if (api.token()) {
+        <button
+          type="button"
+          class="settings-btn"
+          (click)="isPreferencesOpen.set(true)"
+          title="Preferences"
+        >
+          ⚙️
+        </button>
+      }
     </div>
   </header>
 
-  <main class="codexo-main">
-    @if (bridge.activeProblem(); as problem) {
-      <div class="active-problem-card">
-        <div class="problem-meta">
-          <span class="difficulty-badge" [attr.data-difficulty]="problem.difficulty">{{ problem.difficulty }}</span>
-          <span class="problem-id">#{{ problem.platformProblemId }}</span>
+  <!-- Global Error Banner -->
+  @if (globalError()) {
+    <div class="error-banner">
+      <span class="error-text">{{ globalError() }}</span>
+      <button type="button" class="dismiss-btn" (click)="globalError.set(null)">&times;</button>
+    </div>
+  }
+
+  <!-- Main Body Content -->
+  <main class="app-main">
+    <!-- Authentication Component -->
+    <app-auth-panel
+      [currentUser]="api.currentUser()"
+      [isLoading]="isLoading()"
+      [authError]="authError()"
+      (loginSubmitted)="onLogin($event)"
+      (registerSubmitted)="onRegister($event)"
+      (signOutClicked)="onSignOut()"
+    />
+
+    @if (api.token()) {
+      @if (!bridge.activeProblem()) {
+        <!-- Empty State -->
+        <div class="empty-state">
+          <div class="empty-icon">📖</div>
+          <h2 class="empty-title">No Problem Detected</h2>
+          <p class="empty-desc">
+            Navigate to any DSA problem on LeetCode (e.g., <em>Two Sum</em>) and Codexo will automatically load progressive, spoiler-free hints!
+          </p>
         </div>
-        <h2 class="problem-title">{{ problem.title }}</h2>
-        <p class="problem-slug">{{ problem.slug }}</p>
-      </div>
+      } @else {
+        <!-- Problem Context Banner -->
+        <app-problem-context-banner
+          [problem]="bridge.activeProblem()"
+          [session]="activeSession()"
+        />
+
+        <!-- Hint Ladder -->
+        <app-hint-ladder
+          [unlockedHints]="sessionHints()"
+          [status]="hintStatus()"
+          (feedbackSubmitted)="onFeedbackSubmitted($event)"
+        />
+
+        <!-- Next Hint Request / Attempt Gating Area -->
+        <div class="action-dock">
+          @if (requiresAttempt()) {
+            <app-attempt-submission
+              (attemptSubmitted)="onAttemptSubmitted($event)"
+            />
+          } @else if (canRequestDirectHint() && sessionHints().length < 5) {
+            <div class="direct-hint-action">
+              <button
+                type="button"
+                class="request-hint-btn"
+                (click)="onRequestNextHint()"
+                [disabled]="isLoading()"
+              >
+                @if (isLoading()) {
+                  <span>Generating Hint...</span>
+                } @else {
+                  <span>
+                    {{ sessionHints().length === 0 ? 'Start Study Session (Unlock L1)' : 'Request Next Hint &rarr;' }}
+                  </span>
+                }
+              </button>
+            </div>
+          } @else if (sessionHints().length >= 5) {
+            <div class="completion-card">
+              <span class="completion-icon">🎉</span>
+              <div class="completion-text">
+                <strong>All 5 Hint Levels Unlocked!</strong>
+                <p>You have all the algorithmic insights and edge cases needed. Try implementing the full solution on LeetCode now!</p>
+              </div>
+            </div>
+          }
+        </div>
+      }
     } @else {
-      <div class="empty-state">
-        <p class="empty-title">No Problem Detected</p>
-        <p class="empty-desc">Open a problem on LeetCode to receive progressive hints.</p>
+      <div class="auth-required-notice">
+        <h3>Welcome to Codexo!</h3>
+        <p>Sign in or create an account to start your structured, spoiler-free DSA learning journey.</p>
       </div>
     }
   </main>
+
+  <!-- Preferences Modal -->
+  <app-preferences-modal
+    [isOpen]="isPreferencesOpen()"
+    [preferences]="userPreferences()"
+    (closed)="isPreferencesOpen.set(false)"
+    (preferencesSaved)="onPreferencesSaved($event)"
+  />
 </div>

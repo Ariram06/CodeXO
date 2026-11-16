@@ -833,3 +833,79 @@ npm --prefix extension run build
 
 ### Common Pitfalls
 - **Angular CLI Test Discovery with Multi-Root Folders:** By default, Angular CLI's test builder may only scan files inside `sourceRoot: "src/sidepanel"`. Updating `angular.json` with `"sourceRoot": "src"` and explicit `"index": "src/sidepanel/index.html"` ensures all tests across `src/content`, `src/shared`, and `src/sidepanel` execute under Vitest.
+
+
+## M11: Side Panel UI (Angular)
+
+### What We Built
+We delivered the Angular side panel user interface using standalone components, Angular Signals, and Reactive Forms. We implemented `ApiClientService` communicating with `Codexo.Api` with cross-session JWT token persistence in `chrome.storage.local`. We built `ProblemContextBannerComponent` (rendering problem title, LeetCode problem ID, and custom difficulty chips), `HintLadderComponent` (rendering the 5 progressive pedagogical levels, observations, guiding questions, key takeaway boxes, and thumbs up/down feedback), `AttemptSubmissionComponent` (with real-time client-side validation preventing empty/junk attempts and deflecting requests for full solutions), `PreferencesModalComponent` (managing multi-language pseudocode preferences and auto-unlock settings), and `AuthPanelComponent` (providing registration, login, and user profile management).
+
+### Concepts
+- **Fine-Grained Reactivity with Angular Signals:** Components leverage Angular Signals (`signal<T>()`, `input<T>()`, `output<T>()`) to reactively update the UI without Zone.js change-detection overhead or manual `ChangeDetectorRef` calls. Derived state (e.g. `requiresAttempt()`, `canRequestDirectHint()`) recalculates automatically when session or hint arrays update. File: [extension/src/sidepanel/app/app.ts](file:///c:/Ariram/CodeXO/extension/src/sidepanel/app/app.ts).
+- **Client-Side Attempt Gating & Solution Solicitation Deflection:** Even though the server is authoritative, real-time client validation improves user experience by intercepting short text (< 10 chars), repetitive junk (`aaaaaaaaaaaa`), and requests for full code (`"please give me the full complete solution code"`), guiding the user with educational reminders before an unnecessary network call is made. File: [extension/src/sidepanel/app/features/hint-panel/attempt-submission.component.ts](file:///c:/Ariram/CodeXO/extension/src/sidepanel/app/features/hint-panel/attempt-submission.component.ts).
+- **Persistent Token Storage across Extension Lifecycles:** Chrome extension side panels close when the user switches browser windows or navigates away. Storing JWT tokens and user emails in `chrome.storage.local` ensures persistent authentication without requiring repeated logins. File: [extension/src/sidepanel/app/core/services/api-client.service.ts](file:///c:/Ariram/CodeXO/extension/src/sidepanel/app/core/services/api-client.service.ts).
+- **Pedagogical Ladder Progression (L1–L5):** Hints are structured with distinct visual treatments: Key Observations, Guiding Questions, and Key Takeaway highlights. Each unlocked card includes feedback ratings (👍 / 👎) with optional comments, immediately syncing to `/api/hints/{id}/feedback`. File: [extension/src/sidepanel/app/features/hint-panel/hint-ladder.component.ts](file:///c:/Ariram/CodeXO/extension/src/sidepanel/app/features/hint-panel/hint-ladder.component.ts).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Learner as Learner
+    participant UI as Side Panel UI (App)
+    participant Ladder as HintLadderComponent
+    participant Attempt as AttemptSubmissionComponent
+    participant API as ApiClientService
+    participant Backend as Codexo.Api
+
+    Learner->>UI: Selects LeetCode problem (Two Sum)
+    UI->>API: getOrCreateSession(ProblemPayload)
+    API->>Backend: POST /api/sessions/context
+    Backend-->>API: 200 OK (ProblemSessionResponse)
+    UI->>API: getSessionHints(sessionId)
+    API->>Backend: GET /api/sessions/{id}/hints
+    Backend-->>API: 200 OK (HintResponseDto[])
+    UI->>Ladder: Render unlocked hints & feedback controls
+    alt Level requires attempt (L2-L5)
+        UI->>Attempt: Display Attempt Submission Form
+        Learner->>Attempt: Types attempt description & clicks Submit
+        Attempt->>Attempt: Validate text (length, junk, solution defense)
+        Attempt->>UI: emit(attemptSubmitted)
+        UI->>API: submitAttempt(sessionId, request)
+        API->>Backend: POST /api/sessions/{id}/attempts
+        Backend-->>API: 200 OK (Attempt approved)
+        UI->>API: requestNextHint(sessionId)
+        API->>Backend: POST /api/sessions/{id}/hints
+        Backend-->>API: 200 OK (Next Level Hint)
+        UI->>Ladder: Append new hint & advance ladder
+    end
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Used Angular Signals (`signal`, `input`, `output`) across all side panel components.
+  *Rejected alternative:* Using RxJS `BehaviorSubject` and `@Input()`/`@Output()` decorators. Signals provide cleaner synchronous reactivity, less boilerplate, and native support in Angular 21+.
+- **Decision:** Client-side pre-validation of attempt text.
+  *Rejected alternative:* Sending all attempts blindly to the server. Client-side regex checking provides instant feedback to learners typing junk or asking for solutions without consuming backend bandwidth or rate limits.
+
+### Interview Questions & Model Answers
+- **Q: How does the Angular side panel maintain authentication state across browser tab switches or side panel closures?**
+  *A:* Chrome Extension side panels are destroyed and re-instantiated whenever they are closed or re-opened. To maintain authentication, `ApiClientService` uses the `chrome.storage.local` API (with fallback to `localStorage` in browser dev mode). When a user registers or logs in, the JWT token and user identity are persisted in local extension storage. Upon component initialization, `restoreToken()` synchronously reloads the token and configures `Authorization: Bearer <token>` headers for all outgoing HTTP requests.
+- **Q: Why implement client-side attempt validation if the ASP.NET Core backend is authoritative for attempt gating?**
+  *A:* Client-side validation delivers instant pedagogical feedback to the learner. If a student types "just give me the answer", client validation immediately deflects the request and reminds them of Codexo's learning philosophy without making a network round-trip. However, because client code can be manipulated, the backend `AttemptGatingValidator` enforces the exact same rules authoritatively before unlocking database records.
+
+### Teach-back (for Ariram)
+1. **Q: Why is `chrome.storage.local` preferred over standard `localStorage` in Chrome Extensions?**
+   *Model Answer:* While `localStorage` is tied to a specific window origin and may be partitioned or cleared when cookies/cache are cleared, `chrome.storage.local` is isolated directly to the extension's extension ID, persists across background worker wakeups and restarts, and is accessible asynchronously by content scripts, service workers, and extension pages alike.
+2. **Q: What is the purpose of single-flight request coalescing on the backend when the UI already has a disabled submit button state?**
+   *Model Answer:* While client-side button disabling (`[disabled]="isLoading()"`) prevents accidental double-clicks in a well-behaved UI, network latency, multiple open tabs for the same session, or automated API tools could still dispatch parallel requests. Defense in depth requires the server to coalesce concurrent requests so that hint progression and AI billing are never compromised.
+
+### Run & Test Commands
+```bash
+# Run all extension unit and component tests (22 tests)
+npm --prefix extension test -- --watch=false
+
+# Build production extension bundles
+npm --prefix extension run build
+```
+
+### Common Pitfalls
+- **`chrome.storage.local.get` Type Inference:** TypeScript may type `result[key]` as `{}` rather than `any` or `string`. Explicit casting (`String(result['codexo_token'])`) prevents `TS2345: Argument of type '{}' is not assignable to parameter of type 'string'`.
