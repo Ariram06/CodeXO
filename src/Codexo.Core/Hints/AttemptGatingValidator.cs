@@ -37,7 +37,7 @@ public static class AttemptGatingValidator
     };
 
     private static readonly Regex FullSolutionSolicitationRegex = new(
-        @"\b(give|show|tell|provide|write|send)\s+(me\s+)?(the\s+)?(full|complete|entire|whole)?\s*(solution|code|answer|implementation)\b",
+        @"\b(give|show|tell|provide|write|send)\s+(me\s+)?(the\s+)?((full|complete|entire|whole)\s+)*(solution|code|answer|implementation)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // Matches any alphanumeric character repeated 5 or more times (e.g. "aaaaa", "11111")
