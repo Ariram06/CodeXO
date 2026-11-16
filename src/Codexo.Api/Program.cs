@@ -4,6 +4,7 @@ using Codexo.Infrastructure;
 using Codexo.Infrastructure.Data;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -53,6 +54,18 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
+// Configure Rate Limiting
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("HintPolicy", opt =>
+    {
+        opt.Window = TimeSpan.FromMinutes(1);
+        opt.PermitLimit = 30;
+        opt.QueueLimit = 0;
+    });
+});
+
 var app = builder.Build();
 
 // Seed database on startup in development
@@ -65,6 +78,7 @@ if (app.Environment.IsDevelopment())
 
 // Configure the HTTP request pipeline.
 app.UseHttpsRedirection();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
