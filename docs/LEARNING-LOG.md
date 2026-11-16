@@ -12,7 +12,7 @@
 | M4 | Problems + Sessions | IMPLEMENTED | `main` | `bae5309..711fe8d` | 2026-11-16 |
 | M5 | AI Layer | IMPLEMENTED | `feature/m5-ai-layer` | `1f9f09f..6f149e0` | 2026-11-16 |
 | M6 | Hint Orchestration | IMPLEMENTED | `feature/m6-hint-orchestration` | `585069c..82331a9` | 2026-11-16 |
-| M7 | Feedback + Preferences | NOT IMPLEMENTED | — | — | — |
+| M7 | Feedback + Preferences | IMPLEMENTED | `feature/m7-feedback-preferences` | `458c492..5c389fc` | 2026-11-16 |
 | M8 | Hardening | NOT IMPLEMENTED | — | — | — |
 | M9 | Extension Scaffold | NOT IMPLEMENTED | — | — | — |
 | M10 | Content Script | NOT IMPLEMENTED | — | — | — |
@@ -556,3 +556,72 @@ npm --prefix extension run build
 ### Common Pitfalls
 - **Accidental `EntityState.Modified` on Graph Navigation:** Avoid using collection `.Add()` on child entities with client-generated GUIDs unless the child entity state is explicitly configured or tracked. Prefer `DbContext.Set<T>().Add(entity)` to guarantee an `INSERT` statement.
 - **Overly Restrictive Regex in Attempt Validation:** Multi-word adjectives in user solicitations (e.g. `"full complete solution code"`) require quantifier grouping (`((full|complete|entire|whole)\s+)*`) rather than single optional tokens, ensuring aggressive adversarial attempts are cleanly caught.
+
+
+## M7: Feedback & Preferences
+
+### What We Built
+We implemented user feedback collection (`HintFeedback`) and persistent learner study preferences (`UserPreference`). Learners can rate hint helpfulness (thumbs up/down) with optional comments (validated $\le$ 500 characters). Feedback enforces strict per-user tenant ownership (users cannot review hints outside their own sessions) and is idempotent (subsequent submissions for the same hint update the existing rating). User preferences (`PreferredLanguage`, `AutoUnlockL1`) support lazy initialization with defaults on first retrieval and atomic upserting via `PUT /api/preferences`.
+
+### Concepts
+- **Idempotent Feedback Upsert:** `FeedbackService` checks for existing feedback by `(HintId, UserId)`. Rather than rejecting second submissions with a duplicate key conflict, it updates the existing record, ensuring smooth UX if the user changes their rating. File: [src/Codexo.Infrastructure/Services/FeedbackService.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Services/FeedbackService.cs).
+- **Cross-Tenant Hint Ownership Validation:** Before storing feedback, `FeedbackService` inspects `hint.ProblemSession.UserId == userId`. An unauthorized attempt to review another learner's hint fails with `404 Not Found`, preventing ID enumeration and cross-tenant pollution. File: [src/Codexo.Infrastructure/Services/FeedbackService.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Services/FeedbackService.cs).
+- **Lazy Default Preferences Initialization:** When a new user queries `/api/preferences`, the service seeds a default record (`PreferredLanguage = "C#"`, `AutoUnlockL1 = true`), avoiding null checks or onboarding hurdles in the side panel. File: [src/Codexo.Infrastructure/Services/PreferenceService.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Services/PreferenceService.cs).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as Chrome Extension (Side Panel)
+    participant Ctrl as FeedbackController / PreferencesController
+    participant Svc as FeedbackService / PreferenceService
+    participant DB as SQL Server (AppDbContext)
+
+    UI->>Ctrl: POST /api/hints/{hintId}/feedback (isHelpful, comment)
+    Ctrl->>Svc: SubmitFeedbackAsync(userId, hintId, request)
+    Svc->>DB: Query Hint with ProblemSession
+    alt Hint missing or owned by another user
+        Svc-->>Ctrl: KeyNotFoundException
+        Ctrl-->>UI: 404 Not Found
+    else Hint owned by caller
+        Svc->>DB: Query existing feedback by (HintId, UserId)
+        alt Existing found
+            Svc->>DB: Update isHelpful & comment
+        else None exists
+            Svc->>DB: Insert new HintFeedback
+        end
+        DB-->>Svc: SaveChangesAsync()
+        Svc-->>Ctrl: HintFeedbackResponseDto
+        Ctrl-->>UI: 200 OK (HintFeedbackResponseDto)
+    end
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Idempotent upsert on feedback (`POST /api/hints/{id}/feedback` updates if existing).
+  *Rejected alternative:* Returning `409 Conflict` on duplicate submissions. A learner may accidentally tap thumbs down and wish to correct it to thumbs up; returning an error creates frustration.
+- **Decision:** Lazy default creation for user preferences on `GET /api/preferences`.
+  *Rejected alternative:* Requiring an explicit onboarding POST before any preferences exist. Defaulting to C# with AutoUnlockL1=true enables immediate out-of-the-box usage.
+
+### Interview Questions & Model Answers
+- **Q: Why should feedback submission verify hint ownership through navigation properties rather than just checking `Hints.Any(h => h.Id == hintId)`?**
+  *A:* In a multi-tenant system, verifying that a target entity exists is insufficient. An attacker could brute-force hint GUIDs and submit malicious feedback on another user's study session. Checking `hint.ProblemSession.UserId == userId` guarantees tenant isolation. Returning a `404 Not Found` rather than a `403 Forbidden` also prevents attackers from learning whether a specific GUID exists in the system.
+- **Q: How does `PreferenceService` ensure atomic updates when modifying user preferences?**
+  *A:* Preferences are keyed by a unique `UserId` index in SQL Server. `UpsertPreferencesAsync` queries the tracked entity within the scoped DbContext transaction and applies property changes or inserts a new row, ensuring that concurrent requests for the same user modify the same record without duplicate key violations.
+
+### Teach-back (for Ariram)
+1. **Q: Why does `FeedbackService` return a `404 Not Found` instead of `403 Forbidden` when User B attempts to submit feedback for a hint generated in User A's session?**
+   *Model Answer:* Returning `403 Forbidden` leaks information that the GUID exists in the database, allowing ID enumeration attacks. Returning `404 Not Found` completely hides the existence of the resource from unauthorized callers, maintaining multi-tenant privacy.
+2. **Q: Why is an upsert pattern preferred over `409 Conflict` for user rating / feedback endpoints in an interactive UI?**
+   *Model Answer:* In interactive client UIs (like a Chrome extension sidepanel), a user might change their mind (e.g. from thumbs down to thumbs up) or double-click a rating. An upsert gracefully updates the existing rating in place, keeping the UI state consistent without triggering unnecessary error banners.
+
+### Run & Test Commands
+```bash
+# Run all Feedback and Preference integration tests (8 tests)
+dotnet test tests/Codexo.Api.IntegrationTests/Codexo.Api.IntegrationTests.csproj --filter "FeedbackAndPreferenceTests"
+
+# Run entire backend test suite (131 tests)
+dotnet test Codexo.slnx
+```
+
+### Common Pitfalls
+- **Unbounded Comment Lengths:** Unconstrained text fields allow payload flooding and database bloat. Strict FluentValidation rules (`MaximumLength(500)`) prevent abuse before hitting the database.

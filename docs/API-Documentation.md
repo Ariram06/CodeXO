@@ -1,6 +1,6 @@
 # Codexo — API Documentation
 
-> **Status:** IMPLEMENTED (M3 Authentication, M4 Problems & Sessions, M6 Hint Orchestration & Delivery)
+> **Status:** IMPLEMENTED (M3 Authentication, M4 Problems & Sessions, M6 Hint Orchestration & Delivery, M7 Feedback & Preferences)
 
 ## Base URL
 
@@ -323,5 +323,112 @@ Retrieves current progression ladder status, indicating whether the learner can 
 
 ---
 
+### 4. Feedback & Preferences Endpoints (M7)
+
+All endpoints require authentication via JWT Bearer token and enforce strict per-user tenant isolation.
+
+---
+
+#### Submit Hint Feedback
+Submits helpfulness feedback (thumbs up/down) and an optional qualitative comment (max 500 characters) for a specific hint.
+- **Idempotent / Upsert:** One feedback record per user per hint. If the user already submitted feedback for this hint, their rating and comment are updated.
+- **Tenant Validation:** Verified that the hint belongs to a session owned by the authenticated caller.
+
+- **Method:** `POST`
+- **Route:** `/api/hints/{hintId}/feedback`
+- **Authentication:** Required (`Bearer <token>`)
+- **Status:** IMPLEMENTED
+
+##### Request Body
+```json
+{
+  "isHelpful": true,
+  "comment": "The guiding questions helped me focus on array bounds without giving away the approach."
+}
+```
+
+##### Validation Rules
+- `isHelpful`: Required (boolean).
+- `comment`: Optional, maximum 500 characters.
+
+##### Response (200 OK)
+```json
+{
+  "id": "c71a324b-3241-4567-89ab-cdef01234567",
+  "hintId": "e3b0c442-98fc-1c14-9afb-4c8996fb9242",
+  "userId": "d748f3e2-1234-4567-89ab-cdef01234567",
+  "isHelpful": true,
+  "comment": "The guiding questions helped me focus on array bounds without giving away the approach.",
+  "createdAt": "2026-11-16T12:44:00.0000000Z"
+}
+```
+
+##### Response (404 Not Found)
+Returned if the hint does not exist or belongs to another user's session.
+
+---
+
+#### Get User Feedback for Hint
+Retrieves the calling user's feedback for a specific hint if previously submitted.
+
+- **Method:** `GET`
+- **Route:** `/api/hints/{hintId}/feedback`
+- **Authentication:** Required (`Bearer <token>`)
+- **Status:** IMPLEMENTED
+
+##### Response (200 OK)
+Returns `HintFeedbackResponseDto`.
+
+##### Response (404 Not Found)
+Returned if no feedback has been submitted by this user for the specified hint.
+
+---
+
+#### Get User Study Preferences
+Retrieves user study preferences (preferred programming language, auto-unlock level 1). If no preferences record exists yet for the user, default settings (`PreferredLanguage = "C#"`, `AutoUnlockL1 = true`) are created and returned.
+
+- **Method:** `GET`
+- **Route:** `/api/preferences`
+- **Authentication:** Required (`Bearer <token>`)
+- **Status:** IMPLEMENTED
+
+##### Response (200 OK)
+```json
+{
+  "id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6",
+  "userId": "d748f3e2-1234-4567-89ab-cdef01234567",
+  "preferredLanguage": "C#",
+  "autoUnlockL1": true,
+  "updatedAt": "2026-11-16T12:44:00.0000000Z"
+}
+```
+
+---
+
+#### Update User Study Preferences
+Upserts the authenticated user's study preferences.
+
+- **Method:** `PUT`
+- **Route:** `/api/preferences`
+- **Authentication:** Required (`Bearer <token>`)
+- **Status:** IMPLEMENTED
+
+##### Request Body
+```json
+{
+  "preferredLanguage": "Python",
+  "autoUnlockL1": false
+}
+```
+
+##### Validation Rules
+- `preferredLanguage`: Required, maximum 50 characters.
+- `autoUnlockL1`: Required (boolean).
+
+##### Response (200 OK)
+Returns updated `UserPreferenceResponseDto`.
+
+---
+
 ## Future Endpoints
-- **Feedback & Preferences:** NOT IMPLEMENTED (M7)
+- **Hardening & Health Monitoring:** NOT IMPLEMENTED (M8)
