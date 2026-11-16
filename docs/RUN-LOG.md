@@ -13,8 +13,8 @@
 | M7 | Feedback + Preferences | VERIFIED | 131/131 | `feature/m7-feedback-preferences` | `458c492..5c389fc` | Feedback upserting, preference defaults, and cross-tenant 404 security fully verified. |
 | M8 | Hardening | VERIFIED | 134/134 | `feature/m8-hardening` | `03f8331..e680354` | RFC 7807 problem details, sanitized logging, targeted 6/min rate limiting, and /health verified. |
 | M9 | Extension Scaffold | VERIFIED | 4/4 (Ext), 134/134 (.NET) | `feature/m9-extension-scaffold` | `feature/m9-extension-scaffold` | Manifest V3, dual build pipeline, typed messaging router, Signals-based Angular bridge service. |
-| M10 | Content Script | IN PROGRESS | Pending | `feature/m10-content-script` | TBD | Starting problem extraction implementation. |
-| M11 | Side Panel UI | PENDING | — | — | — | Planned. |
+| M10 | Content Script | VERIFIED | 11/11 (Ext), 134/134 (.NET) | `feature/m10-content-script` | `feature/m10-content-script` | Resilient multi-selector LeetCode scraper, DOM sanitization, SPA MutationObserver, 7 extractor tests. |
+| M11 | Side Panel UI | IN PROGRESS | Pending | `feature/m11-side-panel-ui` | TBD | Starting Angular UI components (hint ladder, attempt submission, feedback). |
 | M12 | Integration | PENDING | — | — | — | Planned. |
 | M13 | Release | PENDING | — | — | — | Planned. |
 
@@ -30,6 +30,10 @@
   - *What:* Dedicated `scripts/build-extension.mjs` for standalone entry points.
   - *Why:* Manifest V3 forbids DOM polyfills and eval in background workers; keeping content scripts lightweight without Angular overhead.
   - *Alternative rejected:* Multi-app Angular workspace for background/content scripts.
+- **Decision 3 (M10 DOM Scraping & Testing):** Pure-function DOM extractor tested against saved HTML fixtures with `DOMParser` in JSDOM.
+  - *What:* Decoupled `leetcode-extractor.ts` from live browser DOM, sanitizing via `cloneNode(true)`.
+  - *Why:* Keeps tests 100% fast, deterministic, and offline while preventing DOM corruption on the live LeetCode page.
+  - *Alternative rejected:* Testing via live Puppeteer/Selenium in CI.
 
 ---
 

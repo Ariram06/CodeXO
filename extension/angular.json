@@ -14,13 +14,14 @@
         }
       },
       "root": "",
-      "sourceRoot": "src/sidepanel",
+      "sourceRoot": "src",
       "prefix": "app",
       "architect": {
         "build": {
           "builder": "@angular/build:application",
           "options": {
             "browser": "src/sidepanel/main.ts",
+            "index": "src/sidepanel/index.html",
             "tsConfig": "tsconfig.app.json",
             "outputPath": "dist/codexo/sidepanel",
             "inlineStyleLanguage": "scss",

@@ -1,0 +1,57 @@
+<div class="flex h-full w-full flex-col">
+  <!-- Nav header / UI chrome -->
+  <header class="flex items-center justify-between border-b px-4 py-2">
+    <div class="flex items-center gap-2">
+      <a href="/problemset/all/">Problems</a>
+      <span>/</span>
+      <span class="text-gray-500">Two Sum</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="rounded bg-blue-600 px-3 py-1 text-white">Sign In</button>
+      <button class="p-1"><svg><path d="M0 0h24v24H0z"/></svg></button>
+    </div>
+  </header>
+
+  <!-- Problem area -->
+  <main class="flex flex-1 overflow-hidden">
+    <div class="w-1/2 overflow-y-auto p-4">
+      <div class="flex items-center gap-2">
+        <div data-cy="question-title" class="text-title-large font-semibold">1. Two Sum</div>
+      </div>
+      <div class="mt-2 flex items-center gap-2">
+        <div class="text-difficulty-easy text-olive font-medium">Easy</div>
+        <div class="text-gray-400">Topics</div>
+        <div class="text-gray-400">Companies</div>
+      </div>
+
+      <!-- Description content container -->
+      <div data-track-load="description_content" class="mt-4">
+        <p>Given an array of integers <code>nums</code> and an integer <code>target</code>, return <em>indices of the two numbers such that they add up to <code>target</code></em>.</p>
+        <p>You may assume that each input would have <strong>exactly one solution</strong>, and you may not use the same element twice.</p>
+        <p>You can return the answer in any order.</p>
+
+        <p>&nbsp;</p>
+        <p><strong class="example">Example 1:</strong></p>
+        <div class="relative">
+          <button class="copy-button shrink-0"><svg>copy</svg>Copy</button>
+          <pre><strong>Input:</strong> nums = [2,7,11,15], target = 9
+<strong>Output:</strong> [0,1]
+<strong>Explanation:</strong> Because nums[0] + nums[1] == 9, we return [0, 1].</pre>
+        </div>
+
+        <p><strong class="example">Example 2:</strong></p>
+        <pre><strong>Input:</strong> nums = [3,2,4], target = 6
+<strong>Output:</strong> [1,2]</pre>
+
+        <p>&nbsp;</p>
+        <p><strong>Constraints:</strong></p>
+        <ul>
+          <li><code>2 &lt;= nums.length &lt;= 10<sup>4</sup></code></li>
+          <li><code>-10<sup>9</sup> &lt;= nums[i] &lt;= 10<sup>9</sup></code></li>
+          <li><code>-10<sup>9</sup> &lt;= target &lt;= 10<sup>9</sup></code></li>
+          <li><strong>Only one valid answer exists.</strong></li>
+        </ul>
+      </div>
+    </div>
+  </main>
+</div>

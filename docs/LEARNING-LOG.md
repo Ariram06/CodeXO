@@ -769,3 +769,67 @@ npm --prefix extension run build
 ### Common Pitfalls
 - **Missing `@types/chrome` in TypeScript Config:** Angular CLI projects do not include Chrome Extension types by default. Adding `@types/chrome` and specifying `"types": ["chrome"]` in `tsconfig.app.json` and `tsconfig.spec.json` prevents `TS2304: Cannot find name 'chrome'` compile errors.
 - **Accessing `window` in Service Workers:** Background service workers do not have a `window` object. Any access to `window` or `document` inside the service worker will throw a fatal runtime error and crash the worker.
+
+
+## M10: Content Script (Problem Extraction)
+
+### What We Built
+We implemented resilient DOM scraping on LeetCode problem pages (`extension/src/content/leetcode-extractor.ts`) and wired it into the Chrome content script lifecycle (`extension/src/content/content-script.ts`). The extractor isolates title, platform problem ID, difficulty badge, normalized URL, and problem description text while stripping out all interactive UI chrome, buttons, copy tools, and SVGs. To handle Single Page Application (SPA) client-side routing on Next.js, we implemented a MutationObserver that detects DOM updates after client-side hydration, alongside URL polling and `popstate` listeners, broadcasting extracted problem contexts to the service worker and responding to explicit extraction queries.
+
+### Concepts
+- **Resilient Multi-Selector Extraction Hierarchy:** DSA platforms periodically update their DOM classes and UI layouts. `LeetCodeExtractor` searches ordered selector hierarchies (e.g. `div[data-cy="question-title"]` -> `.text-title-large` -> `h1` -> `document.title`) and normalizes problem number prefixes (`"1. Two Sum"` -> `problemId: "1"`, `title: "Two Sum"`). File: [extension/src/content/leetcode-extractor.ts](file:///c:/Ariram/CodeXO/extension/src/content/leetcode-extractor.ts).
+- **DOM Sanitization via Cloned Nodes:** Scraped containers contain copy buttons, interactive code widgets, and navigation SVGs. Cloning the container (`container.cloneNode(true)`) allows stripping unwanted elements without mutating the user's active webpage or breaking event handlers. File: [extension/src/content/leetcode-extractor.ts](file:///c:/Ariram/CodeXO/extension/src/content/leetcode-extractor.ts).
+- **SPA Client-Side Route Observation:** Platforms built on Next.js or React use HTML5 History API (`pushState`) rather than traditional page navigations. Content scripts do not re-run on internal navigations. Combining `MutationObserver` with URL polling ensures newly rendered problems are extracted immediately when navigating from one problem to another. File: [extension/src/content/content-script.ts](file:///c:/Ariram/CodeXO/extension/src/content/content-script.ts).
+- **Extraction Debouncing:** DOM updates during SPA rendering occur across multiple mutation microtasks. Debouncing extractions by 300–500ms prevents incomplete DOM reads and avoids spamming the extension messaging bus. File: [extension/src/content/content-script.ts](file:///c:/Ariram/CodeXO/extension/src/content/content-script.ts).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Learner as Learner (Browser)
+    participant DOM as LeetCode Webpage DOM
+    participant CS as Content Script (content-script.ts)
+    participant Ext as LeetCodeExtractor
+    participant SW as Service Worker
+
+    Learner->>DOM: Navigates to leetcode.com/problems/two-sum/
+    DOM->>CS: MutationObserver triggers on childList / subtree
+    CS->>CS: scheduleExtraction(500ms debounce)
+    CS->>Ext: extractProblemFromDocument(document, url)
+    Ext->>Ext: Parse slug & search selector hierarchy
+    Ext->>Ext: Clone container & strip buttons, SVGs, scripts
+    Ext->>Ext: Bound description <= 20,000 chars
+    Ext-->>CS: ProblemContextPayload (Two Sum, Easy)
+    CS->>SW: chrome.runtime.sendMessage(ProblemDetected, payload)
+    SW->>SW: Update TabProblemCache & forward to Side Panel
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Extractor is implemented as pure, stateless functions receiving `Document` and `url`.
+  *Rejected alternative:* Tying extraction logic directly into global browser window state. Pure functions enable testing against saved HTML fixtures using DOMParser / JSDOM without running a live browser.
+- **Decision:** Cloned DOM nodes before stripping tags (`cloneNode(true)`).
+  *Rejected alternative:* Modifying live DOM elements in place with `.remove()`. Mutating live page elements destroys LeetCode's React virtual DOM state and breaks page interactivity for the user.
+
+### Interview Questions & Model Answers
+- **Q: Why do Chrome Extension content scripts struggle to detect route changes on modern Single Page Applications (SPAs), and how do you solve it?**
+  *A:* Content scripts are injected only on initial HTTP document loads. In modern SPAs (built with React, Next.js, or Vue), navigating to a new problem uses the HTML5 History API (`history.pushState`) to update the URL and render new components client-side without a full browser reload. To detect these transitions, a content script must combine a `MutationObserver` (to listen for DOM additions), `popstate` event listeners, and URL polling to detect client-side route changes and trigger re-extraction.
+- **Q: Why must problem descriptions scraped from web pages be sanitized and length-bounded before sending to your backend API?**
+  *A:* Web content is untrusted and can contain malicious script tags, enormous payloads (which could cause denial of service or excessive token consumption), or hidden prompt-injection attacks. Sanitizing the DOM removes script tags and UI noise, while enforcing strict character limits (e.g. 20,000 characters) matches database column constraints and protects LLM token budgets.
+
+### Teach-back (for Ariram)
+1. **Q: Why is debouncing necessary when using a `MutationObserver` to extract content from dynamic web pages?**
+   *Model Answer:* SPA frameworks like React update the DOM in rapid, sequential batches (e.g. rendering the layout skeleton, then the title, then fetching description text). Without debouncing, the observer would fire dozens of times per second, extracting incomplete DOM fragments and sending redundant messages. Debouncing waits for DOM mutations to settle before executing the full extraction.
+2. **Q: What is the risk of calling `element.remove()` directly on the live webpage DOM during content scraping?**
+   *Model Answer:* Calling `.remove()` on live DOM elements detaches them from the webpage, corrupting the third-party framework's internal virtual DOM tree and removing buttons or interactive controls that the user needs. By cloning the target element (`element.cloneNode(true)`) and modifying only the clone, the live page remains completely unharmed.
+
+### Run & Test Commands
+```bash
+# Run extension unit tests including extractor fixtures (11 tests)
+npm --prefix extension test -- --watch=false
+
+# Build extension bundles
+npm --prefix extension run build
+```
+
+### Common Pitfalls
+- **Angular CLI Test Discovery with Multi-Root Folders:** By default, Angular CLI's test builder may only scan files inside `sourceRoot: "src/sidepanel"`. Updating `angular.json` with `"sourceRoot": "src"` and explicit `"index": "src/sidepanel/index.html"` ensures all tests across `src/content`, `src/shared`, and `src/sidepanel` execute under Vitest.
