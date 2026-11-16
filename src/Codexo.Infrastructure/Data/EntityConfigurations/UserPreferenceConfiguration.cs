@@ -1,6 +1,7 @@
 namespace Codexo.Infrastructure.Data.EntityConfigurations;
 
 using Codexo.Core.Entities;
+using Codexo.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -14,7 +15,7 @@ public class UserPreferenceConfiguration : IEntityTypeConfiguration<UserPreferen
 
         builder.Property(p => p.UserId)
             .IsRequired()
-            .HasMaxLength(100);
+            .HasMaxLength(450);
 
         builder.Property(p => p.PreferredLanguage)
             .IsRequired()
@@ -22,6 +23,12 @@ public class UserPreferenceConfiguration : IEntityTypeConfiguration<UserPreferen
 
         builder.Property(p => p.AutoUnlockL1)
             .IsRequired();
+
+        // Foreign Key relationship to Identity AppUser (1-to-1: Cascade preference cleanup on user deletion)
+        builder.HasOne<AppUser>()
+            .WithOne()
+            .HasForeignKey<UserPreference>(p => p.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // Unique index: exactly one preference record per user
         builder.HasIndex(p => p.UserId)

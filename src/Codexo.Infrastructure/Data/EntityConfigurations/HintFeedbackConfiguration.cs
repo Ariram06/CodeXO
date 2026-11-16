@@ -1,6 +1,7 @@
 namespace Codexo.Infrastructure.Data.EntityConfigurations;
 
 using Codexo.Core.Entities;
+using Codexo.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -14,7 +15,7 @@ public class HintFeedbackConfiguration : IEntityTypeConfiguration<HintFeedback>
 
         builder.Property(f => f.UserId)
             .IsRequired()
-            .HasMaxLength(100);
+            .HasMaxLength(450);
 
         builder.Property(f => f.IsHelpful)
             .IsRequired();
@@ -28,6 +29,12 @@ public class HintFeedbackConfiguration : IEntityTypeConfiguration<HintFeedback>
             .WithMany(h => h.Feedbacks)
             .HasForeignKey(f => f.HintId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // Foreign Key relationship to Identity AppUser (Restrict to avoid SQL Server multiple cascade path cycles)
+        builder.HasOne<AppUser>()
+            .WithMany()
+            .HasForeignKey(f => f.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Index on (HintId, UserId)
         builder.HasIndex(f => new { f.HintId, f.UserId });

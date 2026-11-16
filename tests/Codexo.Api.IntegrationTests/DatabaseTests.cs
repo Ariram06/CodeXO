@@ -41,7 +41,7 @@ public class DatabaseTests : IClassFixture<WebApplicationFactory<Program>>
 
         await DbInitializer.SeedAsync(context, isDevelopment: true);
 
-        var pref = await context.UserPreferences.FirstOrDefaultAsync(p => p.UserId == DbInitializer.DevPlaceholderUserId);
+        var pref = await context.UserPreferences.FirstOrDefaultAsync(p => p.UserId == DbInitializer.DevUserId);
 
         Assert.NotNull(pref);
         Assert.Equal("C#", pref.PreferredLanguage);
@@ -102,7 +102,7 @@ public class DatabaseTests : IClassFixture<WebApplicationFactory<Program>>
         var linkedSession = new ProblemSession
         {
             Id = Guid.NewGuid(),
-            UserId = "restrict-test-user",
+            UserId = DbInitializer.DevUserId,
             ProblemId = testProblem.Id,
             CurrentLevel = HintLevel.L1_Understand,
             Status = SessionStatus.Active
@@ -155,7 +155,7 @@ public class DatabaseTests : IClassFixture<WebApplicationFactory<Program>>
         var session = new ProblemSession
         {
             Id = Guid.NewGuid(),
-            UserId = "cascade-test-user",
+            UserId = DbInitializer.DevUserId,
             ProblemId = problem.Id,
             CurrentLevel = HintLevel.L1_Understand,
             Status = SessionStatus.Active

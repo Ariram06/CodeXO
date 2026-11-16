@@ -1,6 +1,7 @@
 namespace Codexo.Infrastructure.Data.EntityConfigurations;
 
 using Codexo.Core.Entities;
+using Codexo.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -14,7 +15,7 @@ public class ProblemSessionConfiguration : IEntityTypeConfiguration<ProblemSessi
 
         builder.Property(s => s.UserId)
             .IsRequired()
-            .HasMaxLength(100);
+            .HasMaxLength(450);
 
         builder.Property(s => s.CurrentLevel)
             .IsRequired();
@@ -27,6 +28,12 @@ public class ProblemSessionConfiguration : IEntityTypeConfiguration<ProblemSessi
             .WithMany(p => p.Sessions)
             .HasForeignKey(s => s.ProblemId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // Foreign Key relationship to Identity AppUser (Cascade session cleanup on user deletion)
+        builder.HasOne<AppUser>()
+            .WithMany()
+            .HasForeignKey(s => s.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // Index on (UserId, ProblemId) to quickly retrieve a user's session for a specific problem
         builder.HasIndex(s => new { s.UserId, s.ProblemId });
