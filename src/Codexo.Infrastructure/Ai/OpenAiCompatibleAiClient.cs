@@ -55,14 +55,18 @@ public class OpenAiCompatibleAiClient : IAiClient
 
         messageList.Add(new { role = "user", content = userPrompt });
 
-        var payload = new
+        var payload = new Dictionary<string, object>
         {
-            model = _settings.Model,
-            messages = messageList,
-            temperature = _settings.Temperature,
-            max_tokens = _settings.MaxTokens,
-            reasoning_effort = "low"
+            ["model"] = _settings.Model,
+            ["messages"] = messageList,
+            ["temperature"] = _settings.Temperature,
+            ["max_tokens"] = _settings.MaxTokens
         };
+
+        if (!string.IsNullOrWhiteSpace(_settings.ReasoningEffort))
+        {
+            payload["reasoning_effort"] = _settings.ReasoningEffort;
+        }
 
         var endpoint = _settings.BaseUrl.TrimEnd('/') + "/chat/completions";
         HttpResponseMessage? response = null;
@@ -131,14 +135,39 @@ public class OpenAiCompatibleAiClient : IAiClient
 
             if (response.StatusCode == (HttpStatusCode)429)
             {
-                var retryAfter = response.Headers.RetryAfter?.Delta;
+                TimeSpan? retryAfter = null;
+                if (response.Headers.RetryAfter != null)
+                {
+                    if (response.Headers.RetryAfter.Delta.HasValue)
+                    {
+                        retryAfter = response.Headers.RetryAfter.Delta.Value;
+                    }
+                    else if (response.Headers.RetryAfter.Date.HasValue)
+                    {
+                        var diff = response.Headers.RetryAfter.Date.Value - DateTimeOffset.UtcNow;
+                        retryAfter = diff > TimeSpan.Zero ? diff : TimeSpan.FromSeconds(1);
+                    }
+                }
+
                 throw new AiQuotaExceededException(
                     "AI rate limit or quota exceeded. Please try again shortly.", retryAfter);
             }
 
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                throw new AiServiceUnavailableException(
+                    $"AI model '{_settings.Model}' is not found or unavailable on the configured endpoint.");
+            }
+
+            if ((int)response.StatusCode >= 500)
+            {
+                throw new AiServiceUnavailableException(
+                    $"AI provider server error (HTTP {(int)response.StatusCode}: {response.ReasonPhrase}).");
+            }
+
             var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new AiServiceUnavailableException(
-                $"AI provider returned HTTP {(int)response.StatusCode}: {response.ReasonPhrase}. Details: {errorBody}");
+            throw new AiClientException(
+                $"AI provider rejected request with HTTP {(int)response.StatusCode}: {response.ReasonPhrase}. Details: {errorBody}");
         }
 
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);

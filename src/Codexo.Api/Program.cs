@@ -74,7 +74,8 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 // Configure Configurable Per-User Rate Limiting
-var permitLimitPerMinute = builder.Configuration.GetValue<int>("RateLimiting:PermitLimitPerMinute", 6);
+var chatPermitLimitPerMinute = builder.Configuration.GetValue<int?>("RateLimiting:ChatPermitLimitPerMinute")
+    ?? builder.Configuration.GetValue<int>("RateLimiting:PermitLimitPerMinute", 20);
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -88,7 +89,7 @@ builder.Services.AddRateLimiter(options =>
         {
             Status = StatusCodes.Status429TooManyRequests,
             Title = "Too Many Requests",
-            Detail = "Rate limit exceeded. Please wait a minute before requesting another hint.",
+            Detail = "Rate limit exceeded. Please wait a moment before sending another message.",
             Type = "https://tools.ietf.org/html/rfc6585#section-4",
             Instance = context.HttpContext.Request.Path
         };
@@ -106,24 +107,7 @@ builder.Services.AddRateLimiter(options =>
             userId,
             _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = permitLimitPerMinute,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0
-            });
-    });
-
-    options.AddPolicy("HintPolicy", httpContext =>
-    {
-        var userId = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-            ?? httpContext.User.FindFirst("sub")?.Value
-            ?? httpContext.Connection.RemoteIpAddress?.ToString()
-            ?? "anonymous";
-
-        return RateLimitPartition.GetFixedWindowLimiter(
-            userId,
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = permitLimitPerMinute,
+                PermitLimit = chatPermitLimitPerMinute,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             });

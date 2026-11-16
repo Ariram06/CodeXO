@@ -1,7 +1,7 @@
 namespace Codexo.Infrastructure.AI;
 
 /// <summary>
-/// Configuration options for AI hint generation providers.
+/// Configuration options for AI chat generation providers.
 /// </summary>
 public class AISettings
 {
@@ -21,7 +21,7 @@ public class AISettings
     /// <summary>
     /// Target model identifier. Default is fast, low-cost Flash tier.
     /// </summary>
-    public string Model { get; set; } = "gemini-2.5-flash";
+    public string Model { get; set; } = "gemini-3.5-flash-lite";
 
     /// <summary>
     /// Secret API key. Stored strictly in .NET User Secrets or environment variables (AI__ApiKey).
@@ -34,9 +34,15 @@ public class AISettings
     public int TimeoutSeconds { get; set; } = 30;
 
     /// <summary>
-    /// Hard token ceiling per hint generation to protect quotas.
+    /// Hard token ceiling per chat generation to protect quotas.
+    /// Default is 2000 for chat responses.
     /// </summary>
-    public int MaxTokens { get; set; } = 400;
+    public int MaxTokens { get; set; } = 2000;
+
+    /// <summary>
+    /// Reasoning effort level (e.g. "low", "medium", "high", or null to omit). Default is "low".
+    /// </summary>
+    public string? ReasoningEffort { get; set; } = "low";
 
     /// <summary>
     /// Generation temperature (low temperature ensures deterministic, factual output).
