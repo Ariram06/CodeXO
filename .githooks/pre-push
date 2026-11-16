@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+echo "[pre-push] Running dotnet build Codexo.slnx..."
+dotnet build Codexo.slnx --nologo
+
+echo "[pre-push] Running dotnet test Codexo.slnx..."
+dotnet test Codexo.slnx --nologo --no-build
+
+echo "[pre-push] Verification passed. Proceeding with push."

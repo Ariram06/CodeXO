@@ -155,6 +155,21 @@ We built the EF Core Code First database layer in `Codexo.Infrastructure` target
 - **Composite Unique Index:** A constraint spanning multiple columns (e.g. `Platform` and `PlatformProblemId`) that guarantees uniqueness per external platform without relying on synthetic primary keys alone. File: [src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemConfiguration.cs).
 - **Idempotent Data Seeding:** A startup routine that inspects current database state before inserting data, ensuring migrations and seeds run safely across container, CI, or local test restarts. File: [src/Codexo.Infrastructure/Data/DbInitializer.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/DbInitializer.cs).
 
+### Entity-Relationship Diagram
+```mermaid
+erDiagram
+    Problem ||--o{ ProblemSession : "has sessions (Restrict)"
+    ProblemSession ||--o{ Hint : "has hints (Cascade)"
+    ProblemSession ||--o{ UserAttempt : "has attempts (Cascade)"
+    Hint ||--o{ HintFeedback : "has feedback (Cascade)"
+    UserPreference {
+        uuid Id PK
+        string UserId UK
+        string PreferredLanguage
+        boolean AutoUnlockL1
+    }
+```
+
 ### Runtime Flow
 ```mermaid
 graph TD

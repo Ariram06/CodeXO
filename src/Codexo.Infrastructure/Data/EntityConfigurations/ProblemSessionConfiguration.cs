@@ -22,11 +22,11 @@ public class ProblemSessionConfiguration : IEntityTypeConfiguration<ProblemSessi
         builder.Property(s => s.Status)
             .IsRequired();
 
-        // Foreign Key relationship to Problem
+        // Foreign Key relationship to Problem (Restrict deletion if user sessions exist)
         builder.HasOne(s => s.Problem)
             .WithMany(p => p.Sessions)
             .HasForeignKey(s => s.ProblemId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Index on (UserId, ProblemId) to quickly retrieve a user's session for a specific problem
         builder.HasIndex(s => new { s.UserId, s.ProblemId });

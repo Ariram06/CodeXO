@@ -6,10 +6,10 @@
 
 ```mermaid
 erDiagram
-    Problem ||--o{ ProblemSession : "has sessions"
-    ProblemSession ||--o{ Hint : "has hints"
-    ProblemSession ||--o{ UserAttempt : "has attempts"
-    Hint ||--o{ HintFeedback : "has feedback"
+    Problem ||--o{ ProblemSession : "has sessions (Restrict)"
+    ProblemSession ||--o{ Hint : "has hints (Cascade)"
+    ProblemSession ||--o{ UserAttempt : "has attempts (Cascade)"
+    Hint ||--o{ HintFeedback : "has feedback (Cascade)"
     UserPreference {
         uuid Id PK
         string UserId UK
@@ -110,7 +110,7 @@ Tracks an individual user's progressive hint session for a specific problem.
 
 **Indexes & Constraints:**
 - `PK_ProblemSessions`: Primary key on `Id`.
-- `FK_ProblemSessions_Problems_ProblemId`: Foreign key to `Problems(Id)` with `ON DELETE CASCADE`.
+- `FK_ProblemSessions_Problems_ProblemId`: Foreign key to `Problems(Id)` with `ON DELETE NO ACTION` (`DeleteBehavior.Restrict`). Prevents deleting problems that have user history.
 - `IX_ProblemSessions_UserId_ProblemId`: Non-clustered index on `(UserId, ProblemId)`.
 - `IX_ProblemSessions_UserId_Status`: Non-clustered index on `(UserId, Status)` for active session queries.
 
