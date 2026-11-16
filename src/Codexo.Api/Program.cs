@@ -22,6 +22,12 @@ var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "CodexoExtension";
 var isKeyPresent = !string.IsNullOrWhiteSpace(jwtKey) && jwtKey.Length >= 32;
 Console.WriteLine($"[Startup Check] JWT signing key configured: {(isKeyPresent ? "yes" : "no")}");
 
+// Startup check: Report AI provider and key presence safely without exposing secret values
+var aiProvider = builder.Configuration["AI:Provider"] ?? "Fake";
+var aiKey = builder.Configuration["AI:ApiKey"];
+var isAiKeyConfigured = !string.IsNullOrWhiteSpace(aiKey);
+Console.WriteLine($"[Startup Check] AI provider: {aiProvider}, API key configured: {(isAiKeyConfigured ? "yes" : "no")}");
+
 // Use configured key, or fallback dummy key for schema initialization if key is not yet set
 var signingKeyBytes = Encoding.UTF8.GetBytes(isKeyPresent ? jwtKey! : new string('0', 32));
 
