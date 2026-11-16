@@ -47,9 +47,11 @@ public static class DependencyInjection
         // Register TokenService
         services.AddScoped<ITokenService, TokenService>();
 
-        // Register SessionService & HintService
+        // Register Core Domain Services
         services.AddScoped<ISessionService, SessionService>();
         services.AddScoped<IHintService, HintService>();
+        services.AddScoped<IFeedbackService, FeedbackService>();
+        services.AddScoped<IPreferenceService, PreferenceService>();
 
         // Register HybridCache
 #pragma warning disable EXTEXP0018
