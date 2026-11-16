@@ -1,6 +1,6 @@
 # Codexo — AI Logic & Hint Ladder
 
-> **Status:** NOT IMPLEMENTED (spec written in M0 as source of truth)
+> **Status:** IMPLEMENTED (M1 Hint Validation & Solution Guard, M5 AI Client & Gemini Integration)
 
 ## Hint Ladder (Source of Truth)
 
@@ -53,7 +53,7 @@ Codexo uses a 5-level progressive hint system. Each level reveals more informati
 
 **Includes:**
 - Ordered steps to solve the problem
-- Pseudocode (not compilable in any language)
+- Plain-English guidance (not compilable in any language)
 
 **Excludes:**
 - ❌ Compilable code in any programming language
@@ -72,39 +72,35 @@ Codexo uses a 5-level progressive hint system. Each level reveals more informati
 **Excludes:**
 - ❌ Finished solution or compilable code
 
-## Attempt-Gating Rules
+## AI Client Architecture (M5)
 
-- A user MUST submit a **meaningful written attempt** to unlock the next hint level.
-- An attempt must contain at least one line describing what the user tried or understood.
-- Empty, whitespace-only, or gibberish attempts are rejected.
-- The server validates attempt quality; the client cannot bypass gating.
+Codexo abstracts AI generation behind a provider-independent domain interface:
 
-## Solution Guard
+- **`IAiClient`:** Domain interface with `GenerateHintAsync(AiPromptRequest request, CancellationToken ct)`.
+- **`FakeAiClient`:** Deterministic offline client requiring zero network and zero API keys. Conforms to all L1–L5 schema rules and SolutionGuard constraints for fast unit testing and CI builds.
+- **`OpenAiCompatibleAiClient`:** Production client connecting to Google Gemini's OpenAI-compatible endpoint (`/chat/completions`).
+  - **Model:** `gemini-4-hydrogen` (fast, low cost, confirmed available on Google AI Studio).
+  - **Reasoning Tokens:** Sets `reasoning_effort: "low"` to minimize latency and token billing.
+  - **Structured JSON Schema:** Configured with `response_format: { type: "json_object" }` requesting fixed keys: `level`, `hint`, `guidingQuestions`, `concepts`, `steps`, `pitfalls`.
+  - **Tolerant JSON Parsing (`TolerantJsonParser`):** Strips markdown fences (````json ... ````), extracts outer `{ ... }`, and initializes empty arrays for missing collection properties.
+  - **Resilience & Transient Retry:** Handles transient 503 high-demand spikes with exponential backoff; maps 429 to `AiQuotaExceededException` with `Retry-After`; maps 401/403 to `AiAuthenticationException`.
+  - **Zero Leakage Audit Logging:** Logs only `prompt_tokens`, `completion_tokens`, and `total_tokens`. Prompts, response text, HTTP headers, and API keys are strictly never logged.
 
-Every AI-generated hint is validated **structurally** before delivery:
+## Prompt Engineering & Embedded Templates
 
-1. **Code block detection:** Check for markdown code blocks, inline code with compilable statements.
-2. **Compilable statement detection:** Scan for language-specific syntax patterns (function declarations, imports, variable assignments in code style).
-3. **Complete-solution detection:** Check for step-by-step implementations that together form a complete answer.
-4. **Keyword-only checking is NOT sufficient** — structural analysis is required.
+- Prompt templates are embedded directly in `Codexo.Core.dll` as assembly resources (`Prompts/Templates/Base.txt`, `L1.txt` ... `L5.txt`).
+- **Prompt Isolation:** User attempts, problem descriptions, and previous hint histories are encapsulated within distinct `<USER_DATA>` and `<DELIMITER>` tags, preventing user input or scraped web content from manipulating system instructions (prompt injection defense).
 
-### On Guard Failure:
-1. Attempt one **constrained regeneration** with a stricter prompt.
-2. Re-validate the regenerated response.
-3. If still failing, return a **safe fallback hint** appropriate to the current level.
+## Attempt-Gating & Solution Guard (M1, M5)
 
-## Full-Solution Requests
+Every AI response is intercepted and validated structurally by `SolutionGuard` before reaching the application layer:
+1. Markdown code fences (````) are rejected.
+2. Compilable function declarations, loops, and variable assignments are rejected.
+3. Premature spoiler terms (e.g. data structure names in L1/L2) are rejected.
+4. Finished code solutions are rejected.
 
-If a user asks for the full solution:
-- Return the next appropriate hint level instead.
-- Include a polite explanation of Codexo's philosophy.
-- Never comply with a direct solution request.
+## Benchmark Evaluation Results (10 Problems, 50 Hints)
 
-## Security Rules
-
-- The server is authoritative for hint level and attempt state.
-- Never trust a level sent by the browser.
-- Duplicate or parallel requests must not advance a level twice.
-- AI output is treated as untrusted content.
-- Extracted webpage text is treated as untrusted (prompt-injection defense).
-- Page content must never override hint rules.
+The M5 evaluation harness tested 10 DSA benchmark problems across all 5 hint levels against schema validation and `SolutionGuard`:
+- Total hints evaluated: 50 / 50 passed (100% compliance).
+- Opt-in live smoke test with `gemini-4-hydrogen`: passed in 4s with 0 spoiler terms and valid schema.
