@@ -7,6 +7,7 @@
 | M0 | Scaffolding | IMPLEMENTED | `main` | `896762b..8d9b0c1` | 2026-11-15 |
 | M1 | Domain + Hint Logic | IMPLEMENTED | `main` | `e8ffb00..9b7fc2b` | 2026-11-15 |
 | M2 | Database | IMPLEMENTED | `main` | `719c47e..a073149` | 2026-11-15 |
+| M2-CLEANUP | Database Refinements | IMPLEMENTED | `main` | `2831a96..79bd1f6` | 2026-11-16 |
 | M3 | Authentication | NOT IMPLEMENTED | — | — | — |
 | M4 | Problems + Sessions | NOT IMPLEMENTED | — | — |
 | M5 | AI Layer | NOT IMPLEMENTED | — | — |
@@ -220,3 +221,58 @@ dotnet test Codexo.slnx
 ### Common Pitfalls
 - **Package Version Drift:** Adding EF Core packages without specifying version constraints can pull in next-major daily builds (e.g. 11.0.0 on a net10.0 target). Pin to matching LTS versions (`10.0.*`).
 - **Missing Foreign Key Cascade Rules:** Neglecting cascade deletes causes orphaned records in child tables (e.g. hints or attempts when a session is cleared).
+
+
+## M2-CLEANUP: Database Refinements
+
+### What We Built
+We refined the database architecture to safeguard user solving history by altering the `Problem -> ProblemSession` foreign key delete behavior from `Cascade` to `Restrict`. We generated EF Core migration `RestrictProblemDeleteBehavior` and applied it to SQL Server LocalDB (`MSSQLLocalDB`). We updated `DbInitializer` to enforce development-only execution and explicitly labeled `seed-user-1` as a dev placeholder prior to M3 Identity integration. We documented the complete Mermaid entity relationship diagram in documentation and established `.githooks/pre-push` to enforce build and test gates before pushing.
+
+### Concepts
+- **Referential Integrity Restrict Action:** Changing foreign key deletion from `Cascade` to `Restrict` (`ON DELETE NO ACTION` in SQL Server) prevents accidental deletion of parent problem records whenever user study sessions reference them. File: [src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemSessionConfiguration.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/EntityConfigurations/ProblemSessionConfiguration.cs).
+- **Environment-Gated Data Seeding:** Restricting database seeding and automatic migrations strictly to `Development` ensures production environments rely exclusively on formal CI/CD database migration pipelines. File: [src/Codexo.Infrastructure/Data/DbInitializer.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/DbInitializer.cs).
+- **Pre-Push Git Hook:** A client-side Git hook that compiles the solution and executes all test suites, terminating the push command with a non-zero exit code if any test fails. File: [.githooks/pre-push](file:///c:/Ariram/CodeXO/.githooks/pre-push).
+
+### Runtime Flow
+```mermaid
+graph TD
+    A["Problem Delete Attempted"] --> B["EF Core Change Tracker"]
+    B --> C["SQL Server Foreign Key Evaluation"]
+    C --> D{"ProblemSessions exist for Problem?"}
+    D -->|"Yes"| E["SQL Server Rejects with FK Violation"]
+    E --> F["EF Core Throws DbUpdateException"]
+    D -->|"No"| G["Problem Deleted Successfully"]
+```
+
+1. Application attempts to delete a `Problem` entity.
+2. EF Core issues a `DELETE FROM Problems WHERE Id = @id` statement to SQL Server.
+3. SQL Server checks constraint `FK_ProblemSessions_Problems_ProblemId`.
+4. If any `ProblemSession` records reference the target problem, the server aborts the transaction with an FK violation.
+5. EF Core wraps the error and surfaces a `DbUpdateException`, preventing data loss.
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Set `Problem -> ProblemSession` to `DeleteBehavior.Restrict` while retaining `Cascade` on `ProblemSession -> Hints` and `ProblemSession -> UserAttempts`.
+  *Rejected alternative:* Cascade delete from Problem all the way down. If an administrator deletes or re-imports a problem, cascading would wipe out every user's personal attempt history and hint ladder state.
+- **Decision:** Created `.githooks/pre-push` running `dotnet build` and `dotnet test`.
+  *Rejected alternative:* Relying solely on remote CI. Pre-push hooks catch regressions locally before pushing broken commits to remote branches.
+
+### Interview Questions & Model Answers
+- **Q: Why should parent entities like Problems use `Restrict` instead of `Cascade` when referenced by user activity logs?**
+  *A:* Cascading deletions on master/catalog data can result in catastrophic unintentional data destruction. If a problem record is removed, cascading would erase all associated user learning logs, attempts, and progress. Restrict forces administrators to either archive problems or reassign sessions.
+- **Q: How does EF Core handle `DeleteBehavior.Restrict` differently when dependent entities are loaded in memory vs only in the database?**
+  *A:* If dependents are loaded in the `DbContext` change tracker, EF Core attempts to nullify the foreign key client-side (throwing `InvalidOperationException` if required). If dependents exist only in the database, EF Core sends the `DELETE` command and SQL Server throws a `DbUpdateException`.
+- **Q: Why should database seeding routines check `app.Environment.IsDevelopment()`?**
+  *A:* Automatic seeding in production can overwrite live records, introduce dummy test users into security audits, or trigger race conditions in multi-instance horizontally scaled deployments.
+
+### Run & Test Commands
+```bash
+# Enable pre-push hook locally
+git config core.hooksPath .githooks
+
+# Run all tests across solution
+dotnet test Codexo.slnx --verbosity normal
+```
+
+### Common Pitfalls
+- **Untracked Test Collisions:** Integration tests that insert static IDs can fail on repeated runs if previous test runs failed before cleanup. Always use unique identifiers (e.g. `Guid.NewGuid()`) for test problem records.
+- **Severed Required Relationships in Memory:** Attempting to delete a parent with tracked children under `Restrict` trips client-side conceptual null checks before the SQL constraint can even be reached.
