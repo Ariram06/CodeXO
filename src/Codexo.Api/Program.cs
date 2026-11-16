@@ -1,11 +1,51 @@
+using System.Text;
+using Codexo.Api.Validators;
 using Codexo.Infrastructure;
 using Codexo.Infrastructure.Data;
+using FluentValidation;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllers();
+builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 builder.Services.AddInfrastructure(builder.Configuration);
+
+// Configure JWT Authentication
+var jwtKey = builder.Configuration["Jwt:Key"];
+var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "CodexoApi";
+var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "CodexoExtension";
+
+// Startup check: Report key presence safely without exposing secret values (CODEXO BUILD RULES)
+var isKeyPresent = !string.IsNullOrWhiteSpace(jwtKey) && jwtKey.Length >= 32;
+Console.WriteLine($"[Startup Check] JWT signing key configured: {(isKeyPresent ? "yes" : "no")}");
+
+// Use configured key, or fallback dummy key for schema initialization if key is not yet set
+var signingKeyBytes = Encoding.UTF8.GetBytes(isKeyPresent ? jwtKey! : new string('0', 32));
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidIssuer = jwtIssuer,
+        ValidateAudience = true,
+        ValidAudience = jwtAudience,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(signingKeyBytes),
+        ClockSkew = TimeSpan.Zero
+    };
+});
+
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
@@ -19,6 +59,8 @@ if (app.Environment.IsDevelopment())
 
 // Configure the HTTP request pipeline.
 app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
