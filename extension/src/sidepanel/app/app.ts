@@ -8,6 +8,7 @@ import { MarkdownRendererService } from './core/services/markdown-renderer.servi
 import {
   ChatMessageItem,
   ChatMessageResponse,
+  ConversationSummaryDto,
   PageContext,
   UserPreferenceDto,
 } from './core/models/api-contracts';
@@ -45,6 +46,9 @@ export class App {
 
   readonly userPreferences = signal<UserPreferenceDto | null>(null);
   readonly isPreferencesOpen = signal<boolean>(false);
+  readonly isHistoryOpen = signal<boolean>(false);
+  readonly isLoadingHistory = signal<boolean>(false);
+  readonly conversations = signal<ConversationSummaryDto[]>([]);
   readonly authError = signal<string | null>(null);
 
   private activeAbortController: AbortController | null = null;
@@ -314,6 +318,86 @@ export class App {
   onPreferencesUpdated(updated: Partial<UserPreferenceDto>): void {
     this.api.updatePreferences(updated).subscribe({
       next: (res) => this.userPreferences.set(res),
+      error: () => {},
+    });
+  }
+
+  toggleHistoryDrawer(): void {
+    const open = !this.isHistoryOpen();
+    this.isHistoryOpen.set(open);
+    if (open) {
+      this.loadConversations();
+    }
+  }
+
+  loadConversations(): void {
+    this.isLoadingHistory.set(true);
+    this.api.getConversations().subscribe({
+      next: (convs) => {
+        this.conversations.set(convs);
+        this.isLoadingHistory.set(false);
+      },
+      error: () => {
+        this.isLoadingHistory.set(false);
+      },
+    });
+  }
+
+  onNewChat(): void {
+    this.onStopGenerating();
+    this.conversationId.set(null);
+    this.messages.set([]);
+    this.chatError.set(null);
+    this.isHistoryOpen.set(false);
+  }
+
+  onResumeConversation(id: string): void {
+    this.onStopGenerating();
+    this.isLoading.set(true);
+    this.api.getConversation(id).subscribe({
+      next: (detail) => {
+        this.conversationId.set(detail.id);
+        this.messages.set(
+          detail.messages.map((m) => ({
+            id: m.messageId,
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+            timestamp: new Date(m.createdAtUtc),
+            model: m.model,
+          }))
+        );
+        this.isLoading.set(false);
+        this.isHistoryOpen.set(false);
+        this.scrollToBottom(true);
+      },
+      error: (err) => {
+        this.isLoading.set(false);
+        this.chatError.set({ message: err?.error?.message || 'Failed to resume conversation.' });
+      },
+    });
+  }
+
+  onDeleteConversation(id: string): void {
+    this.api.deleteConversation(id).subscribe({
+      next: () => {
+        this.conversations.update((prev) => prev.filter((c) => c.id !== id));
+        if (this.conversationId() === id) {
+          this.conversationId.set(null);
+          this.messages.set([]);
+        }
+      },
+      error: () => {},
+    });
+  }
+
+  onClearAllHistory(): void {
+    this.api.clearConversations().subscribe({
+      next: () => {
+        this.conversations.set([]);
+        this.conversationId.set(null);
+        this.messages.set([]);
+        this.isPreferencesOpen.set(false);
+      },
       error: () => {},
     });
   }

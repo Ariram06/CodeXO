@@ -18,6 +18,14 @@
       @if (api.token()) {
         <button
           type="button"
+          class="history-btn"
+          (click)="toggleHistoryDrawer()"
+          title="Conversation History"
+        >
+          📜
+        </button>
+        <button
+          type="button"
           class="settings-btn"
           (click)="isPreferencesOpen.set(true)"
           title="Preferences"
@@ -229,5 +237,56 @@
     [preferences]="userPreferences()"
     (closed)="isPreferencesOpen.set(false)"
     (preferencesSaved)="onPreferencesUpdated($event)"
+    (clearAllHistory)="onClearAllHistory()"
   />
+
+  <!-- History Drawer -->
+  @if (isHistoryOpen()) {
+    <div class="history-backdrop" (click)="isHistoryOpen.set(false)">
+      <div class="history-drawer" (click)="$event.stopPropagation()">
+        <div class="drawer-header">
+          <h3 class="drawer-title">Conversation History</h3>
+          <button type="button" class="close-drawer-btn" (click)="isHistoryOpen.set(false)">&times;</button>
+        </div>
+
+        <div class="drawer-actions">
+          <button type="button" class="new-chat-btn" (click)="onNewChat()">
+            <span class="plus-icon">+</span> New Chat
+          </button>
+        </div>
+
+        <div class="conversations-list">
+          @if (isLoadingHistory()) {
+            <div class="history-loading">Loading conversations...</div>
+          } @else if (conversations().length === 0) {
+            <div class="history-empty">No conversation history yet.</div>
+          } @else {
+            @for (conv of conversations(); track conv.id) {
+              <div
+                class="conversation-item"
+                [class.active]="conv.id === conversationId()"
+                (click)="onResumeConversation(conv.id)"
+              >
+                <div class="conv-info">
+                  <div class="conv-title" [title]="conv.title">{{ conv.title }}</div>
+                  <div class="conv-meta">
+                    <span class="conv-time">{{ conv.updatedAtUtc | date:'short' }}</span>
+                    <span class="conv-badge">{{ conv.messageCount }} msgs</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="delete-conv-btn"
+                  (click)="$event.stopPropagation(); onDeleteConversation(conv.id)"
+                  title="Delete conversation"
+                >
+                  🗑️
+                </button>
+              </div>
+            }
+          }
+        </div>
+      </div>
+    </div>
+  }
 </div>

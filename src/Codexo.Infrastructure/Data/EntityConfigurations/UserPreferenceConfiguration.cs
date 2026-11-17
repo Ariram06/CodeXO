@@ -24,6 +24,11 @@ public class UserPreferenceConfiguration : IEntityTypeConfiguration<UserPreferen
         builder.Property(p => p.AutoUnlockL1)
             .IsRequired();
 
+        builder.Property(p => p.ReasoningLevel)
+            .IsRequired()
+            .HasMaxLength(20)
+            .HasDefaultValue("low");
+
         // Foreign Key relationship to Identity AppUser (1-to-1: Cascade preference cleanup on user deletion)
         builder.HasOne<AppUser>()
             .WithOne()

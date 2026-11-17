@@ -84,4 +84,69 @@ public class DataMinimizationTests : IClassFixture<WebApplicationFactory<Program
             }
         }
     }
+
+    [Fact]
+    public async Task StreamMessageAsync_NeverStoresRawCodeOrPageText_InDatabase()
+    {
+        var client = _factory.CreateClient();
+        var email = $"min_stream_{Guid.NewGuid():N}@codexo.dev";
+        var password = "SecurePassword123!";
+        var regResp = await client.PostAsJsonAsync(
+            "/api/auth/register",
+            new RegisterRequest(email, password, password));
+        var auth = await regResp.Content.ReadFromJsonAsync<AuthResponse>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", auth!.Token);
+
+        const string secretRawCode = "def secret_streaming_algorithm(): return 42";
+        const string rawProblemText = "Secret problem description for streaming test.";
+
+        var context = new PageContext(
+            Platform: "HackerRank",
+            Url: "https://www.hackerrank.com/challenges/sample-problem",
+            Title: "Sample Challenge",
+            ProblemText: rawProblemText,
+            Language: "python",
+            Code: secretRawCode,
+            Selection: null,
+            ErrorText: null,
+            IsTruncated: false);
+
+        var request = new SendMessageRequest(
+            ConversationId: null,
+            Message: "Help with this challenge",
+            Context: context);
+
+        var response = await client.PostAsJsonAsync("/api/chat/stream", request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // Read stream to completion so final assistant message saves
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("[DONE]", body);
+
+        // Verify database contents directly
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var userMessages = await dbContext.Messages
+            .Include(m => m.Conversation)
+            .Where(m => m.Conversation != null && m.Conversation.UserId == auth.UserId)
+            .ToListAsync();
+
+        Assert.Equal(2, userMessages.Count); // 1 User + 1 Assistant
+
+        foreach (var msg in userMessages)
+        {
+            Assert.DoesNotContain(secretRawCode, msg.Content);
+            Assert.DoesNotContain(rawProblemText, msg.Content);
+
+            if (msg.Metadata != null)
+            {
+                Assert.Equal("HackerRank", msg.Metadata.Platform);
+                Assert.Equal("www.hackerrank.com", msg.Metadata.Host);
+                Assert.Equal("Sample Challenge", msg.Metadata.Title);
+                Assert.Equal("python", msg.Metadata.Language);
+                Assert.Equal(1, msg.Metadata.CodeLineCount);
+            }
+        }
+    }
 }

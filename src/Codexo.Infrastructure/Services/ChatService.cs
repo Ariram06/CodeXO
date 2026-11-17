@@ -289,6 +289,91 @@ public class ChatService : IChatService
         }
     }
 
+    public async Task<IReadOnlyList<ConversationSummaryDto>> GetConversationsAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var conversations = await _dbContext.Conversations
+            .AsNoTracking()
+            .Where(c => c.UserId == userId)
+            .OrderByDescending(c => c.UpdatedAtUtc)
+            .Select(c => new ConversationSummaryDto(
+                c.Id,
+                c.Title,
+                c.CreatedAtUtc,
+                c.UpdatedAtUtc,
+                c.Messages.Count))
+            .ToListAsync(cancellationToken);
+
+        return conversations;
+    }
+
+    public async Task<ConversationDetailDto> GetConversationByIdAsync(
+        string userId,
+        Guid conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        var conversation = await _dbContext.Conversations
+            .AsNoTracking()
+            .Include(c => c.Messages)
+            .FirstOrDefaultAsync(c => c.Id == conversationId && c.UserId == userId, cancellationToken);
+
+        if (conversation == null)
+        {
+            throw new KeyNotFoundException($"Conversation '{conversationId}' was not found.");
+        }
+
+        var messages = conversation.Messages
+            .OrderBy(m => m.CreatedAtUtc)
+            .Select(m => new ChatMessageResponse(
+                m.ConversationId,
+                m.Id,
+                m.Role.ToString().ToLowerInvariant(),
+                m.Content,
+                m.Metadata,
+                m.CreatedAtUtc))
+            .ToList();
+
+        return new ConversationDetailDto(
+            conversation.Id,
+            conversation.Title,
+            conversation.CreatedAtUtc,
+            conversation.UpdatedAtUtc,
+            messages);
+    }
+
+    public async Task DeleteConversationAsync(
+        string userId,
+        Guid conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        var conversation = await _dbContext.Conversations
+            .FirstOrDefaultAsync(c => c.Id == conversationId && c.UserId == userId, cancellationToken);
+
+        if (conversation == null)
+        {
+            throw new KeyNotFoundException($"Conversation '{conversationId}' was not found.");
+        }
+
+        _dbContext.Conversations.Remove(conversation);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ClearConversationsAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var conversations = await _dbContext.Conversations
+            .Where(c => c.UserId == userId)
+            .ToListAsync(cancellationToken);
+
+        if (conversations.Count > 0)
+        {
+            _dbContext.Conversations.RemoveRange(conversations);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
     private static PageContext? SanitizeAndCapContext(PageContext? context)
     {
         if (context == null)

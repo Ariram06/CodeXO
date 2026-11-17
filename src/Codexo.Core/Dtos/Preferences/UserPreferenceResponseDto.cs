@@ -5,4 +5,6 @@ public record UserPreferenceResponseDto(
     string UserId,
     string PreferredLanguage,
     bool AutoUnlockL1,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string ReasoningLevel = "low",
+    string? Model = null);

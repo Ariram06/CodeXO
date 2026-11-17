@@ -80,6 +80,49 @@ describe('App Component', () => {
       }),
       updatePreferences: vi.fn(),
       clearToken: vi.fn(),
+      getConversations: vi.fn(() =>
+        of([
+          {
+            id: 'conv-123',
+            title: 'Two Sum Discussion',
+            createdAtUtc: new Date().toISOString(),
+            updatedAtUtc: new Date().toISOString(),
+            messageCount: 2,
+          },
+        ])
+      ),
+      getConversation: vi.fn((id: string) =>
+        of({
+          id,
+          title: 'Two Sum Discussion',
+          createdAtUtc: new Date().toISOString(),
+          updatedAtUtc: new Date().toISOString(),
+          messages: [
+            {
+              conversationId: id,
+              messageId: 'msg-u1',
+              role: 'user',
+              content: 'How do I solve two sum?',
+              createdAtUtc: new Date().toISOString(),
+              model: 'gemini-3.5-flash-lite',
+              inputTokens: 10,
+              outputTokens: 20,
+            },
+            {
+              conversationId: id,
+              messageId: 'msg-a1',
+              role: 'assistant',
+              content: 'Use a hash map for O(n) lookup.',
+              createdAtUtc: new Date().toISOString(),
+              model: 'gemini-3.5-flash-lite',
+              inputTokens: 10,
+              outputTokens: 20,
+            },
+          ],
+        })
+      ),
+      deleteConversation: vi.fn(() => of(void 0)),
+      clearConversations: vi.fn(() => of(void 0)),
     };
 
     await TestBed.configureTestingModule({
@@ -391,5 +434,100 @@ describe('App Component', () => {
     app.onComposerInput();
 
     expect(textarea.style.height).toBeTruthy();
+  });
+
+  it('should toggle history drawer and load conversations', () => {
+    expect(app.isHistoryOpen()).toBe(false);
+
+    app.toggleHistoryDrawer();
+    expect(app.isHistoryOpen()).toBe(true);
+    expect(mockApiClientService.getConversations).toHaveBeenCalled();
+    expect(app.conversations().length).toBe(1);
+    expect(app.conversations()[0].title).toBe('Two Sum Discussion');
+
+    app.toggleHistoryDrawer();
+    expect(app.isHistoryOpen()).toBe(false);
+  });
+
+  it('should reset active state on onNewChat()', () => {
+    app.conversationId.set('conv-123');
+    app.messages.set([
+      { id: '1', role: 'user', content: 'test', timestamp: new Date() },
+    ]);
+    app.isHistoryOpen.set(true);
+
+    app.onNewChat();
+
+    expect(app.conversationId()).toBeNull();
+    expect(app.messages().length).toBe(0);
+    expect(app.isHistoryOpen()).toBe(false);
+  });
+
+  it('should resume conversation and populate messages on onResumeConversation()', () => {
+    app.onResumeConversation('conv-123');
+
+    expect(mockApiClientService.getConversation).toHaveBeenCalledWith('conv-123');
+    expect(app.conversationId()).toBe('conv-123');
+    expect(app.messages().length).toBe(2);
+    expect(app.messages()[0].role).toBe('user');
+    expect(app.messages()[0].content).toBe('How do I solve two sum?');
+    expect(app.messages()[1].role).toBe('assistant');
+    expect(app.messages()[1].content).toBe('Use a hash map for O(n) lookup.');
+    expect(app.isHistoryOpen()).toBe(false);
+  });
+
+  it('should delete conversation and reset active chat if matching', () => {
+    app.conversationId.set('conv-123');
+    app.messages.set([
+      { id: '1', role: 'user', content: 'test', timestamp: new Date() },
+    ]);
+    app.conversations.set([
+      {
+        id: 'conv-123',
+        title: 'Two Sum Discussion',
+        createdAtUtc: new Date().toISOString(),
+        updatedAtUtc: new Date().toISOString(),
+        messageCount: 2,
+      },
+      {
+        id: 'conv-456',
+        title: 'Binary Search',
+        createdAtUtc: new Date().toISOString(),
+        updatedAtUtc: new Date().toISOString(),
+        messageCount: 1,
+      },
+    ]);
+
+    app.onDeleteConversation('conv-123');
+
+    expect(mockApiClientService.deleteConversation).toHaveBeenCalledWith('conv-123');
+    expect(app.conversations().length).toBe(1);
+    expect(app.conversations()[0].id).toBe('conv-456');
+    expect(app.conversationId()).toBeNull();
+    expect(app.messages().length).toBe(0);
+  });
+
+  it('should clear all conversations on onClearAllHistory()', () => {
+    app.conversationId.set('conv-123');
+    app.messages.set([
+      { id: '1', role: 'user', content: 'test', timestamp: new Date() },
+    ]);
+    app.conversations.set([
+      {
+        id: 'conv-123',
+        title: 'Two Sum Discussion',
+        createdAtUtc: new Date().toISOString(),
+        updatedAtUtc: new Date().toISOString(),
+        messageCount: 2,
+      },
+    ]);
+
+    app.onClearAllHistory();
+
+    expect(mockApiClientService.clearConversations).toHaveBeenCalled();
+    expect(app.conversations().length).toBe(0);
+    expect(app.conversationId()).toBeNull();
+    expect(app.messages().length).toBe(0);
+    expect(app.isPreferencesOpen()).toBe(false);
   });
 });

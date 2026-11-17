@@ -229,3 +229,44 @@
    - Observe the textarea smoothly expands its height from 1 line up to 5 lines.
    - Paste a 10-line text block: verify the textarea caps at 5 lines and displays an internal vertical scrollbar without breaking the layout.
    - Press **Enter**: verify the textarea immediately resets to its compact 1-line height.
+
+---
+
+## 11. Step 10: Verify Conversation History, Settings & Privacy (Module C7)
+
+1. **Test History Drawer & Multi-turn Continuity:**
+   - In the header, click the **📜 History** button.
+   - Observe the slide-over drawer opening from the left with a list of past conversations, ordered newest first.
+   - Each item displays the conversation title, relative/short timestamp, message count badge, and a delete button (🗑️).
+   - Click **+ New Chat**:
+     - Verify active messages clear, `conversationId` is reset to null, and the drawer closes.
+     - Send a new question (e.g., "Explain Merge Sort"). Verify a new conversation is created.
+   - Re-open the history drawer and click the previous conversation:
+     - Verify the prior conversation's messages reload chronologically.
+     - Send a follow-up query; verify context continues in that same conversation.
+
+2. **Test Conversation Deletion:**
+   - In the history drawer, click the 🗑️ icon on an individual conversation.
+   - Verify the conversation is removed from the drawer and backend database (cascade-deleting its messages).
+   - If deleting the currently active conversation, verify the chat pane resets to empty state.
+
+3. **Test Settings, Model Badge & Reasoning Level:**
+   - In the header, click the **⚙️ Settings** icon.
+   - Verify the modal displays:
+     - Active AI model badge (e.g. `gemini-2.5-flash` or `gemini-3.5-flash-lite`).
+     - Preferred Language selector (e.g. `Python`, `C#`, `TypeScript`).
+     - AI Reasoning Level selector with options: `Low (Fastest response)`, `Medium (Balanced reasoning)`, `High (Deepest analysis)`.
+     - Zero Code Persisted privacy badge.
+   - Change Reasoning Level to `High` and save settings:
+     - Verify success toast "Preferences saved successfully!".
+     - Inspect `GET /api/preferences` to verify `reasoningLevel: "high"` and `model` are persisted.
+
+4. **Test Clear All History & Data Minimization Verification:**
+   - In the Settings modal under "Data Privacy & History", click **Clear All Conversation History**.
+   - Observe the confirmation prompt appears: *"Are you sure? This cannot be undone."* with Cancel and Yes, Clear All buttons.
+   - Click **Yes, Clear All**:
+     - Verify all user conversations are removed.
+     - Verify the chat stream resets to empty state.
+   - Database Privacy Audit:
+     - Query `SELECT [Content], [Metadata] FROM [Messages]` in SQL Server.
+     - Verify no raw source code or problem text is stored in `Content` or `Metadata` (only metadata summaries: platform, host, title, language, code line count, isTruncated).

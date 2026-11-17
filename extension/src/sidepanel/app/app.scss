@@ -78,6 +78,7 @@
   }
 }
 
+.history-btn,
 .settings-btn {
   background: none;
   border: none;
@@ -733,5 +734,185 @@
   }
   50% {
     opacity: 0;
+  }
+}
+
+/* History Drawer */
+.history-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(2px);
+  z-index: 999;
+  display: flex;
+}
+
+.history-drawer {
+  width: 280px;
+  max-width: 85%;
+  height: 100%;
+  background: #161619;
+  border-right: 1px solid #27272a;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.6);
+  animation: slide-in-left 0.2s ease-out;
+}
+
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #27272a;
+
+  .drawer-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f3f4f6;
+    margin: 0;
+  }
+
+  .close-drawer-btn {
+    background: none;
+    border: none;
+    color: #9ca3af;
+    font-size: 20px;
+    cursor: pointer;
+    line-height: 1;
+
+    &:hover {
+      color: #fff;
+    }
+  }
+}
+
+.drawer-actions {
+  padding: 10px 14px;
+  border-bottom: 1px solid #27272a;
+
+  .new-chat-btn {
+    width: 100%;
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: background 0.15s ease;
+
+    &:hover {
+      background: #1d4ed8;
+    }
+
+    .plus-icon {
+      font-size: 15px;
+      line-height: 1;
+    }
+  }
+}
+
+.conversations-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  .history-loading,
+  .history-empty {
+    font-size: 12px;
+    color: #71717a;
+    text-align: center;
+    padding: 24px 12px;
+  }
+
+  .conversation-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    transition: background 0.15s;
+    border: 1px solid transparent;
+
+    &:hover {
+      background: #202024;
+
+      .delete-conv-btn {
+        opacity: 1;
+      }
+    }
+
+    &.active {
+      background: #27272a;
+      border-color: #3f3f46;
+    }
+
+    .conv-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .conv-title {
+      font-size: 12px;
+      font-weight: 500;
+      color: #e4e4e7;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .conv-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: #71717a;
+    }
+
+    .conv-badge {
+      background: #27272a;
+      color: #9ca3af;
+      padding: 0 4px;
+      border-radius: 3px;
+    }
+
+    .delete-conv-btn {
+      opacity: 0.4;
+      background: none;
+      border: none;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      transition: opacity 0.15s, background 0.15s;
+
+      &:hover {
+        opacity: 1;
+        background: rgba(239, 68, 68, 0.2);
+      }
+    }
   }
 }

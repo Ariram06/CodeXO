@@ -5,6 +5,8 @@ import {
   AuthResponse,
   ChatMessageResponse,
   ChatStreamChunk,
+  ConversationDetailDto,
+  ConversationSummaryDto,
   MessageFeedbackResponse,
   SendMessageRequest,
   StreamResult,
@@ -311,6 +313,35 @@ export class ApiClientService {
     return this.http.put<UserPreferenceDto>(
       `${this.baseUrl}/api/preferences`,
       preferences,
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  // --- Conversations History ---
+  getConversations(): Observable<ConversationSummaryDto[]> {
+    return this.http.get<ConversationSummaryDto[]>(
+      `${this.baseUrl}/api/chat/conversations`,
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  getConversation(id: string): Observable<ConversationDetailDto> {
+    return this.http.get<ConversationDetailDto>(
+      `${this.baseUrl}/api/chat/conversations/${id}`,
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  deleteConversation(id: string): Observable<void> {
+    return this.http.delete<void>(
+      `${this.baseUrl}/api/chat/conversations/${id}`,
+      { headers: this.getAuthHeaders() }
+    );
+  }
+
+  clearConversations(): Observable<void> {
+    return this.http.delete<void>(
+      `${this.baseUrl}/api/chat/conversations`,
       { headers: this.getAuthHeaders() }
     );
   }

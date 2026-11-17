@@ -47,6 +47,30 @@ export interface UserPreferenceDto {
   preferredLanguage: string;
   autoUnlockL1: boolean;
   updatedAt: string;
+  reasoningLevel?: 'low' | 'medium' | 'high' | string;
+  model?: string;
+}
+
+export interface UpdateUserPreferenceRequest {
+  preferredLanguage?: string;
+  autoUnlockL1?: boolean;
+  reasoningLevel?: 'low' | 'medium' | 'high' | string;
+}
+
+export interface ConversationSummaryDto {
+  id: string;
+  title: string;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  messageCount: number;
+}
+
+export interface ConversationDetailDto {
+  id: string;
+  title: string;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  messages: ChatMessageResponse[];
 }
 
 export interface AuthResponse {

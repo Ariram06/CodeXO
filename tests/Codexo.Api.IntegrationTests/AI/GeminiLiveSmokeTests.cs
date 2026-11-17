@@ -66,7 +66,7 @@ public class GeminiLiveSmokeTests
             ApiKey = apiKey,
             BaseUrl = config["AI:BaseUrl"] ?? "https://generativelanguage.googleapis.com/v1beta/openai/",
             Model = config["AI:Model"] ?? "gemini-3.5-flash-lite",
-            MaxTokens = 50,
+            MaxTokens = 200,
             ReasoningEffort = "low",
             TimeoutSeconds = 25
         };

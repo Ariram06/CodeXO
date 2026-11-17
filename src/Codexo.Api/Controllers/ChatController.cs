@@ -152,6 +152,84 @@ public class ChatController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Lists all conversations for the authenticated user, ordered by most recently updated.
+    /// </summary>
+    [HttpGet("conversations")]
+    public async Task<IActionResult> GetConversations(CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized(new { message = "User identity could not be verified." });
+        }
+
+        var conversations = await _chatService.GetConversationsAsync(userId, cancellationToken);
+        return Ok(conversations);
+    }
+
+    /// <summary>
+    /// Retrieves a single conversation by ID including its messages.
+    /// </summary>
+    [HttpGet("conversations/{id:guid}")]
+    public async Task<IActionResult> GetConversationById(Guid id, CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized(new { message = "User identity could not be verified." });
+        }
+
+        try
+        {
+            var conversation = await _chatService.GetConversationByIdAsync(userId, id, cancellationToken);
+            return Ok(conversation);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Deletes a specific conversation and all associated messages.
+    /// </summary>
+    [HttpDelete("conversations/{id:guid}")]
+    public async Task<IActionResult> DeleteConversation(Guid id, CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized(new { message = "User identity could not be verified." });
+        }
+
+        try
+        {
+            await _chatService.DeleteConversationAsync(userId, id, cancellationToken);
+            return NoContent();
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Deletes all conversations and messages belonging to the authenticated user.
+    /// </summary>
+    [HttpDelete("conversations")]
+    public async Task<IActionResult> ClearConversations(CancellationToken cancellationToken)
+    {
+        var userId = GetUserId();
+        if (string.IsNullOrEmpty(userId))
+        {
+            return Unauthorized(new { message = "User identity could not be verified." });
+        }
+
+        await _chatService.ClearConversationsAsync(userId, cancellationToken);
+        return NoContent();
+    }
+
     private string? GetUserId() =>
         User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
 }

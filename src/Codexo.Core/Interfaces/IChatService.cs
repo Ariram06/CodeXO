@@ -13,4 +13,22 @@ public interface IChatService
         string userId,
         SendMessageRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ConversationSummaryDto>> GetConversationsAsync(
+        string userId,
+        CancellationToken cancellationToken = default);
+
+    Task<ConversationDetailDto> GetConversationByIdAsync(
+        string userId,
+        Guid conversationId,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteConversationAsync(
+        string userId,
+        Guid conversationId,
+        CancellationToken cancellationToken = default);
+
+    Task ClearConversationsAsync(
+        string userId,
+        CancellationToken cancellationToken = default);
 }

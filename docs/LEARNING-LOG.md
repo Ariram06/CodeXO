@@ -25,7 +25,7 @@
 | C4 | Context Collection | IMPLEMENTED | `main` | `e65f92b` | 2026-11-17 |
 | C5 | Streaming | IMPLEMENTED | `main` | `b3d535c` | 2026-11-17 |
 | C6 | UI Polish | IMPLEMENTED | `main` | `b869a78` | 2026-11-17 |
-| C7 | History, Settings, Privacy | NOT IMPLEMENTED | — | — | — |
+| C7 | History, Settings, Privacy | IMPLEMENTED | `main` | `feature/c7-history-settings-privacy` | 2026-11-17 |
 | C8 | Hardening, Docs, Release | NOT IMPLEMENTED | — | — | — |
 
 ---
@@ -1510,3 +1510,110 @@ dotnet test Codexo.slnx
 ### Common Pitfalls
 - **Encoding Code Snippets in HTML Attributes:** Placing raw code with special characters or newlines into an HTML attribute (`data-code="..."`) breaks HTML attribute quoting or loses line breaks. Using `encodeURIComponent(rawCode)` when creating the attribute and `decodeURIComponent(encoded)` on copy preserves formatting and special characters perfectly.
 - **Marked and Math Parsing Conflicts:** Running `marked` before LaTeX math parsing can cause marked to interpret underscores (`x_1`) as italics or backslashes (`\frac`) as escapes. Pre-rendering math expressions with KaTeX or tokenizing them before markdown compilation preserves LaTeX formulas intact.
+
+
+## C7: History, Settings, Privacy
+
+### What We Built
+In Module C7, we delivered full conversational history management, user study settings, active AI model transparency, and verified data privacy guarantees across the entire application stack:
+1. **Conversation History Endpoints (`GET /api/chat/conversations`, `GET /api/chat/conversations/{id}`, `DELETE /api/chat/conversations/{id}`, `DELETE /api/chat/conversations`):**
+   - Implemented in `ChatController.cs` and `ChatService.cs` with EF Core.
+   - Ordered by `UpdatedAtUtc desc` with message counts.
+   - Cross-user data isolation: attempting to access or delete another user's conversation yields `404 Not Found`.
+   - Cascade deletion: deleting a conversation automatically cascades to delete all associated messages.
+2. **Settings & Preferences Enhancements:**
+   - Extended `UserPreference` entity with `ReasoningLevel` (`low`, `medium`, `high`) via EF Core migration `20261117072416_AddReasoningLevelToUserPreference`.
+   - Updated `PreferencesController.cs` and `PreferenceService.cs` to surface the active AI model name and persist `ReasoningLevel`.
+   - Added validation via `UpdateUserPreferenceRequestValidator.cs`.
+3. **Side Panel History Drawer & Settings UI:**
+   - History button in extension header toggling a slide-over drawer with smooth animations.
+   - `+ New Chat` action resets conversation context and clears the chat pane.
+   - List of past conversations displaying title, timestamp, message count, and individual delete action.
+   - Resuming past conversation loads its complete message history chronologically and preserves continuous follow-up turns.
+   - Settings modal displaying the active AI model badge, preferred language, reasoning effort selector, and "Clear All Conversation History" button with inline confirmation.
+4. **Data Privacy & Minimization Verification:**
+   - Automated integration tests (`DataMinimizationTests.cs`) mathematically proving that raw code and problem text are **never** stored in database tables or columns, either during non-streaming or streaming requests. Only structural metadata (`platform`, `host`, `title`, `language`, `codeLineCount`, `isTruncated`) is retained.
+
+### Concepts
+- **Data Minimization by Design:** User code is treated as strictly ephemeral. Code is transmitted in memory to the AI inference provider in the prompt, while the relational database persists only non-identifying structural metadata (`platform`, `host`, `title`, `language`, `codeLineCount`). File: [src/Codexo.Infrastructure/Services/ChatService.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Services/ChatService.cs).
+- **Cascade Deletion in EF Core:** Configuring `OnDelete(DeleteBehavior.Cascade)` on `Message.ConversationId` ensures that when a `Conversation` record is removed, all dependent `Message` records are deleted within the same database transaction. File: [src/Codexo.Infrastructure/Data/EntityConfigurations/ConversationConfiguration.cs](file:///c:/Ariram/CodeXO/src/Codexo.Infrastructure/Data/EntityConfigurations/ConversationConfiguration.cs).
+- **Multi-Turn Context Hydration:** By supplying `conversationId`, prior messages in the conversation are retrieved from the database, formatted chronologically into the LLM system/history prompt, enabling continuous follow-ups across browser reloads or tab switches. File: [src/Codexo.Core/Prompts/ChatPromptBuilder.cs](file:///c:/Ariram/CodeXO/src/Codexo.Core/Prompts/ChatPromptBuilder.cs).
+- **Component-Driven Sliding Drawer:** Built with Angular 21 standalone component architecture and reactive signals (`isHistoryOpen`, `conversations`, `isLoadingHistory`), providing instant UI responsiveness with zero third-party UI framework overhead. File: [extension/src/sidepanel/app/app.ts](file:///c:/Ariram/CodeXO/extension/src/sidepanel/app/app.ts).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant SidePanel as Side Panel (Angular)
+    participant Api as Codexo.Api
+    participant ChatSvc as ChatService
+    participant DB as SQL Server (EF Core)
+
+    User->>SidePanel: Clicks [📜 History] button
+    SidePanel->>Api: GET /api/chat/conversations
+    Api->>ChatSvc: GetConversationsAsync(userId)
+    ChatSvc->>DB: Query Conversations WHERE UserId = @userId ORDER BY UpdatedAtUtc DESC
+    DB-->>ChatSvc: List<Conversation> with Message counts
+    ChatSvc-->>Api: List<ConversationSummaryDto>
+    Api-->>SidePanel: 200 OK (JSON)
+    SidePanel->>User: Displays slide-over drawer with conversations
+
+    opt User resumes a previous conversation
+        User->>SidePanel: Clicks conversation item
+        SidePanel->>Api: GET /api/chat/conversations/{id}
+        Api->>ChatSvc: GetConversationByIdAsync(userId, id)
+        ChatSvc->>DB: Include(Messages) WHERE Id = @id AND UserId = @userId
+        DB-->>ChatSvc: Conversation with Messages
+        ChatSvc-->>Api: ConversationDetailDto
+        Api-->>SidePanel: 200 OK (Messages array)
+        SidePanel->>SidePanel: Sets conversationId and messages signal
+        SidePanel->>User: Renders full chat history chronologically
+    end
+
+    opt User clears all history
+        User->>SidePanel: Opens Settings -> Clicks "Clear All Conversation History"
+        SidePanel->>User: Prompts inline confirmation
+        User->>SidePanel: Clicks "Yes, Clear All"
+        SidePanel->>Api: DELETE /api/chat/conversations
+        Api->>ChatSvc: ClearConversationsAsync(userId)
+        ChatSvc->>DB: RemoveRange(Conversations) WHERE UserId = @userId
+        DB-->>ChatSvc: Cascade deletes Messages
+        ChatSvc-->>Api: Done
+        Api-->>SidePanel: 204 NoContent
+        SidePanel->>SidePanel: Resets active chat & empties list
+    end
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Return conversation summaries without full messages in `GET /api/chat/conversations`.
+  *Rejected alternative:* Return complete conversation graphs with all messages in the list endpoint. Fetching all messages for 50+ conversations generates excessive database IO and network bandwidth. Keeping the list lightweight and lazy-loading messages via `GET /api/chat/conversations/{id}` upon selection ensures instant drawer opening.
+- **Decision:** Soft-delete vs. hard-delete for privacy.
+  *Decision:* Hard delete (`RemoveRange` / `Remove` with cascade).
+  *Rationale:* For a privacy-centric AI tool, when a user asks to delete their conversation history, records must be permanently erased from storage rather than flagged as `IsDeleted = true`.
+- **Decision:** Enforce reasoning level as user preference with server-side default `"low"`.
+  *Rationale:* While high reasoning effort is valuable for complex dynamic programming problems, it increases response latency and token usage. Defaulting to `"low"` keeps everyday coding queries fast while allowing advanced users to select `"high"` in Settings.
+
+### Interview Questions & Model Answers
+- **Q: How does Codexo guarantee data privacy when sending proprietary code to an AI model?**
+  *A:* Codexo implements strict data minimization: user code and problem descriptions exist only in memory during the lifetime of the HTTP request to build the LLM prompt. Before messages are persisted in the database, `ChatService.ExtractMetadata()` strips all raw code and text, storing only structural summaries (platform, host, title, language, codeLineCount, isTruncated). Automated integration tests in `DataMinimizationTests.cs` verify that raw code strings never appear in any database column or message content.
+- **Q: Why is cascade delete configured at both the EF Core model level and the database schema level?**
+  *A:* Configuring cascade delete in EF Core (`OnDelete(DeleteBehavior.Cascade)`) instructs EF Core to delete dependent entities when tracked in memory, while applying it to the database foreign key constraint ensures that even direct SQL executions or un-tracked bulk deletes maintain referential integrity without leaving orphaned `Message` rows.
+- **Q: How does the side panel history drawer maintain state isolation between users?**
+  *A:* Every conversation endpoint enforces JWT authentication and scopes database queries by `c.UserId == userId`. If a user attempts to fetch or delete a conversation ID belonging to a different user, the service throws `KeyNotFoundException` resulting in a `404 Not Found`, preventing unauthorized access or conversation enumeration.
+
+### Run & Test Commands
+```powershell
+# Run Angular extension tests (66 tests passing across 10 suites)
+npm --prefix extension test -- --watch=false
+
+# Build production extension package (zero warnings, 0 errors)
+npm --prefix extension run build
+
+# Run complete backend test suite (57 tests passing across unit + integration)
+dotnet test Codexo.slnx
+```
+
+### Common Pitfalls
+- **Adding EF Core Entity Properties Without Migrations:** Adding a property to an entity that maps to a database column without creating and applying an EF Core migration will result in runtime SQL exceptions (`Invalid column name`) when querying the entity. Always run `dotnet ef migrations add` and `dotnet ef database update` when modifying entity properties.
+- **Cascade Delete Performance with Large Data Sets:** When deleting all conversations for a user, using EF Core's `RemoveRange()` loads the entities into memory to track state. For production databases with hundreds of thousands of messages, executing a direct SQL `ExecuteDeleteAsync()` is significantly faster: `_dbContext.Conversations.Where(c => c.UserId == userId).ExecuteDeleteAsync()`.

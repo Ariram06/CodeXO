@@ -122,10 +122,15 @@ public class FeedbackAndPreferenceTests : IClassFixture<WebApplicationFactory<Pr
 
         var getResp = await client.GetAsync("/api/preferences");
         Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
+        var initialPref = await getResp.Content.ReadFromJsonAsync<UserPreferenceResponseDto>();
+        Assert.NotNull(initialPref);
+        Assert.Equal("low", initialPref.ReasoningLevel);
+        Assert.NotNull(initialPref.Model);
 
         var updateReq = new UpdateUserPreferenceRequestDto(
             PreferredLanguage: "Python",
-            AutoUnlockL1: false);
+            AutoUnlockL1: false,
+            ReasoningLevel: "high");
 
         var putResp = await client.PutAsJsonAsync("/api/preferences", updateReq);
         Assert.Equal(HttpStatusCode.OK, putResp.StatusCode);
@@ -133,5 +138,8 @@ public class FeedbackAndPreferenceTests : IClassFixture<WebApplicationFactory<Pr
         var updatedPref = await putResp.Content.ReadFromJsonAsync<UserPreferenceResponseDto>();
         Assert.NotNull(updatedPref);
         Assert.Equal("Python", updatedPref.PreferredLanguage);
+        Assert.False(updatedPref.AutoUnlockL1);
+        Assert.Equal("high", updatedPref.ReasoningLevel);
+        Assert.NotNull(updatedPref.Model);
     }
 }
