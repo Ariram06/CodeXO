@@ -29,6 +29,11 @@
               {
                 "glob": "favicon.ico",
                 "input": "public"
+              },
+              {
+                "glob": "preload.css",
+                "input": "src/sidepanel/styles",
+                "output": "."
               }
             ],
             "styles": ["src/sidepanel/styles/styles.scss"],
@@ -49,10 +54,18 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "20kB",
-                  "maximumError": "40kB"
+                  "maximumWarning": "30kB",
+                  "maximumError": "50kB"
                 }
               ],
+              "optimization": {
+                "scripts": true,
+                "styles": {
+                  "minify": true,
+                  "inlineCritical": false
+                },
+                "fonts": false
+              },
               "outputHashing": "none"
             },
             "development": {

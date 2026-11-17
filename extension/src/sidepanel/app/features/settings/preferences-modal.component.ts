@@ -10,16 +10,26 @@ import { UserPreferenceDto } from '../../core/models/api-contracts';
   template: `
     @if (isOpen()) {
       <div class="modal-backdrop" (click)="onClose()">
-        <div class="modal-card" (click)="$event.stopPropagation()">
+        <div class="modal-card" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="modal-heading">
           <div class="modal-header">
-            <h3 class="modal-title">Settings & Preferences</h3>
-            <button type="button" class="close-btn" (click)="onClose()">&times;</button>
+            <h3 id="modal-heading" class="modal-title">Settings & Preferences</h3>
+            <button
+              type="button"
+              class="close-btn"
+              (click)="onClose()"
+              aria-label="Close settings modal"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
           </div>
 
           <!-- Active AI Model Info -->
           <div class="model-info-row">
-            <span class="info-label">Active Model:</span>
-            <span class="model-badge">{{ preferences()?.model || 'gemini-2.5-flash' }}</span>
+            <span class="info-label">Active Model</span>
+            <span class="model-badge">{{ preferences()?.model || 'gemini-3.5-flash-lite' }}</span>
           </div>
 
           <form (ngSubmit)="onSave()">
@@ -31,6 +41,7 @@ import { UserPreferenceDto } from '../../core/models/api-contracts';
                 class="form-select"
                 [(ngModel)]="selectedLanguage"
                 name="selectedLanguage"
+                aria-label="Preferred programming language"
               >
                 @for (lang of languages; track lang) {
                   <option [value]="lang">{{ lang }}</option>
@@ -47,6 +58,7 @@ import { UserPreferenceDto } from '../../core/models/api-contracts';
                 class="form-select"
                 [(ngModel)]="reasoningLevel"
                 name="reasoningLevel"
+                aria-label="AI Reasoning Level"
               >
                 <option value="low">Low (Fastest response)</option>
                 <option value="medium">Medium (Balanced reasoning)</option>
@@ -68,12 +80,24 @@ import { UserPreferenceDto } from '../../core/models/api-contracts';
             </div>
 
             @if (saveSuccess()) {
-              <div class="save-toast">Preferences saved successfully!</div>
+              <div class="save-toast" role="status">Preferences saved successfully!</div>
             }
 
             <div class="modal-actions">
-              <button type="button" class="cancel-btn" (click)="onClose()">Close</button>
-              <button type="submit" class="save-btn" [disabled]="isSaving()">
+              <button
+                type="button"
+                class="cancel-btn"
+                (click)="onClose()"
+                aria-label="Close modal without saving"
+              >
+                Close
+              </button>
+              <button
+                type="submit"
+                class="save-btn"
+                [disabled]="isSaving()"
+                aria-label="Save settings"
+              >
                 {{ isSaving() ? 'Saving...' : 'Save Settings' }}
               </button>
             </div>
@@ -94,15 +118,30 @@ import { UserPreferenceDto } from '../../core/models/api-contracts';
                 type="button"
                 class="clear-history-btn"
                 (click)="showClearConfirm.set(true)"
+                aria-label="Clear all conversation history"
               >
                 Clear All Conversation History
               </button>
             } @else {
-              <div class="confirm-box">
+              <div class="confirm-box" role="alert">
                 <span class="confirm-warning">Are you sure? This cannot be undone.</span>
                 <div class="confirm-actions">
-                  <button type="button" class="confirm-cancel-btn" (click)="showClearConfirm.set(false)">Cancel</button>
-                  <button type="button" class="confirm-delete-btn" (click)="onConfirmClearHistory()">Yes, Clear All</button>
+                  <button
+                    type="button"
+                    class="confirm-cancel-btn"
+                    (click)="showClearConfirm.set(false)"
+                    aria-label="Cancel clearing history"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    class="confirm-delete-btn"
+                    (click)="onConfirmClearHistory()"
+                    aria-label="Confirm clearing all conversation history"
+                  >
+                    Yes, Clear All
+                  </button>
                 </div>
               </div>
             }
@@ -115,8 +154,7 @@ import { UserPreferenceDto } from '../../core/models/api-contracts';
     .modal-backdrop {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(2px);
+      background: rgba(0, 0, 0, 0.65);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -124,13 +162,24 @@ import { UserPreferenceDto } from '../../core/models/api-contracts';
       padding: 16px;
     }
     .modal-card {
-      background: #18181b;
-      border: 1px solid #3f3f46;
-      border-radius: 8px;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-containers);
       width: 100%;
       max-width: 360px;
-      padding: 16px;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      padding: 18px;
+      box-shadow: var(--shadow-popover);
+      animation: modal-fade-in 150ms ease-out;
+    }
+    @keyframes modal-fade-in {
+      from {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
     .modal-header {
       display: flex;
@@ -139,70 +188,87 @@ import { UserPreferenceDto } from '../../core/models/api-contracts';
       margin-bottom: 12px;
     }
     .modal-title {
-      font-size: 15px;
+      font-size: var(--text-md);
       font-weight: 600;
-      color: #f3f4f6;
+      color: var(--color-text);
       margin: 0;
     }
     .close-btn {
-      background: none;
+      background: transparent;
       border: none;
-      color: #9ca3af;
-      font-size: 20px;
+      color: var(--color-muted);
       cursor: pointer;
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-sm);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--transition-fast);
+
+      &:hover {
+        background: var(--color-surface-2);
+        color: var(--color-text);
+      }
     }
     .model-info-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 8px 10px;
-      background: #121215;
-      border-radius: 6px;
-      border: 1px solid #27272a;
+      background: var(--color-surface-2);
+      border-radius: var(--radius-controls);
+      border: 1px solid var(--color-border);
       margin-bottom: 14px;
     }
     .info-label {
-      font-size: 12px;
-      color: #9ca3af;
+      font-size: var(--text-sm);
+      color: var(--color-muted);
+      font-weight: 500;
     }
     .model-badge {
       font-size: 11px;
-      font-family: monospace;
+      font-family: var(--font-mono);
       padding: 2px 8px;
-      border-radius: 12px;
-      background: rgba(59, 130, 246, 0.15);
-      color: #60a5fa;
-      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: var(--radius-pill);
+      background: var(--color-bg);
+      color: var(--color-accent-text);
+      border: 1px solid var(--color-border);
     }
     .form-group {
       margin-bottom: 14px;
     }
     .form-label {
       display: block;
-      font-size: 12px;
+      font-size: var(--text-sm);
       font-weight: 500;
-      color: #d1d5db;
-      margin-bottom: 4px;
+      color: var(--color-text);
+      margin-bottom: 5px;
     }
     .form-select {
       width: 100%;
+      height: 36px;
       box-sizing: border-box;
-      background: #141418;
-      border: 1px solid #27272a;
-      border-radius: 6px;
-      padding: 6px 10px;
-      color: #f3f4f6;
-      font-size: 13px;
-    }
-    .form-select:focus {
-      outline: none;
-      border-color: #3b82f6;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-controls);
+      padding: 0 10px;
+      color: var(--color-text);
+      font-size: var(--text-sm);
+      font-family: inherit;
+      transition: border-color var(--transition-fast);
+
+      &:focus {
+        outline: none;
+        border-color: var(--color-accent);
+      }
     }
     .form-hint {
       display: block;
-      font-size: 11px;
-      color: #71717a;
+      font-size: var(--text-xs);
+      color: var(--color-muted);
       margin-top: 4px;
+      line-height: 1.4;
     }
     .form-group-checkbox {
       margin-bottom: 14px;
@@ -211,19 +277,23 @@ import { UserPreferenceDto } from '../../core/models/api-contracts';
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 12px;
-      color: #d1d5db;
+      font-size: var(--text-sm);
+      color: var(--color-text);
       cursor: pointer;
+      user-select: none;
     }
     .checkbox-input {
-      accent-color: #3b82f6;
+      accent-color: var(--color-accent);
+      width: 16px;
+      height: 16px;
     }
     .save-toast {
-      font-size: 12px;
-      color: #34d399;
-      background: rgba(16, 185, 129, 0.15);
-      padding: 6px 8px;
-      border-radius: 4px;
+      font-size: var(--text-xs);
+      color: var(--color-success);
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.25);
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
       margin-bottom: 12px;
       text-align: center;
     }
@@ -234,30 +304,44 @@ import { UserPreferenceDto } from '../../core/models/api-contracts';
       margin-bottom: 16px;
     }
     .cancel-btn {
-      background: #27272a;
-      color: #d1d5db;
-      border: none;
-      border-radius: 6px;
-      padding: 6px 12px;
-      font-size: 12px;
+      background: var(--color-surface-2);
+      color: var(--color-muted);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-controls);
+      min-height: 32px;
+      padding: 0 12px;
+      font-size: var(--text-sm);
       cursor: pointer;
+      transition: all var(--transition-fast);
+
+      &:hover {
+        color: var(--color-text);
+        background: var(--color-border);
+      }
     }
     .save-btn {
-      background: #2563eb;
-      color: #fff;
+      background: var(--color-accent);
+      color: var(--color-text-on-accent);
       border: none;
-      border-radius: 6px;
-      padding: 6px 14px;
-      font-size: 12px;
+      border-radius: var(--radius-controls);
+      min-height: 32px;
+      padding: 0 14px;
+      font-size: var(--text-sm);
       font-weight: 600;
       cursor: pointer;
-    }
-    .save-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+      transition: background var(--transition-fast);
+
+      &:hover:not(:disabled) {
+        background: var(--color-accent-hover);
+      }
+
+      &:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
     }
     .privacy-section {
-      border-top: 1px solid #27272a;
+      border-top: 1px solid var(--color-border);
       padding-top: 14px;
     }
     .privacy-header {
@@ -269,51 +353,56 @@ import { UserPreferenceDto } from '../../core/models/api-contracts';
     .privacy-title {
       font-size: 13px;
       font-weight: 600;
-      color: #e4e4e7;
+      color: var(--color-text);
       margin: 0;
     }
     .privacy-badge {
       font-size: 10px;
-      padding: 1px 6px;
-      border-radius: 4px;
-      background: rgba(16, 185, 129, 0.15);
-      color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.3);
+      font-weight: 500;
+      padding: 2px 6px;
+      border-radius: var(--radius-pill);
+      background: rgba(16, 185, 129, 0.12);
+      color: var(--color-success);
+      border: 1px solid rgba(16, 185, 129, 0.25);
     }
     .privacy-desc {
-      font-size: 11px;
-      color: #71717a;
+      font-size: var(--text-xs);
+      color: var(--color-muted);
       line-height: 1.4;
       margin: 0 0 10px 0;
     }
     .clear-history-btn {
       width: 100%;
-      background: rgba(239, 68, 68, 0.1);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.25);
-      border-radius: 6px;
-      padding: 6px 10px;
-      font-size: 12px;
+      min-height: 32px;
+      background: var(--color-error-bg);
+      color: var(--color-error-text);
+      border: 1px solid var(--color-error-border);
+      border-radius: var(--radius-controls);
+      padding: 0 12px;
+      font-size: var(--text-xs);
       font-weight: 500;
       cursor: pointer;
-      transition: background 0.15s, border-color 0.15s;
-    }
-    .clear-history-btn:hover {
-      background: rgba(239, 68, 68, 0.2);
-      border-color: rgba(239, 68, 68, 0.4);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity var(--transition-fast);
+
+      &:hover {
+        opacity: 0.85;
+      }
     }
     .confirm-box {
-      background: rgba(239, 68, 68, 0.08);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      border-radius: 6px;
-      padding: 8px 10px;
+      background: var(--color-error-bg);
+      border: 1px solid var(--color-error-border);
+      border-radius: var(--radius-controls);
+      padding: 10px;
       display: flex;
       flex-direction: column;
       gap: 8px;
     }
     .confirm-warning {
-      font-size: 12px;
-      color: #fca5a5;
+      font-size: var(--text-xs);
+      color: var(--color-error-text);
       font-weight: 500;
       text-align: center;
     }
@@ -323,21 +412,23 @@ import { UserPreferenceDto } from '../../core/models/api-contracts';
       gap: 8px;
     }
     .confirm-cancel-btn {
-      background: #27272a;
-      color: #d1d5db;
-      border: none;
-      border-radius: 4px;
-      padding: 4px 10px;
-      font-size: 11px;
+      background: var(--color-surface-2);
+      color: var(--color-text);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      min-height: 32px;
+      padding: 0 12px;
+      font-size: var(--text-xs);
       cursor: pointer;
     }
     .confirm-delete-btn {
-      background: #dc2626;
+      background: var(--color-error-text);
       color: #ffffff;
       border: none;
-      border-radius: 4px;
-      padding: 4px 12px;
-      font-size: 11px;
+      border-radius: var(--radius-sm);
+      min-height: 32px;
+      padding: 0 12px;
+      font-size: var(--text-xs);
       font-weight: 600;
       cursor: pointer;
     }

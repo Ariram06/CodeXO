@@ -1,0 +1,19 @@
+/* Preload critical theme styles to eliminate any white flash on first paint under MV3 CSP */
+html, body {
+  background-color: #191918;
+  color: #F3F1EA;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  box-sizing: border-box;
+}
+
+@media (prefers-color-scheme: light) {
+  html, body {
+    background-color: #FAF9F5;
+    color: #1F1E1B;
+  }
+}

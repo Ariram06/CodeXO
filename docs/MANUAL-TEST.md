@@ -270,3 +270,69 @@
    - Database Privacy Audit:
      - Query `SELECT [Content], [Metadata] FROM [Messages]` in SQL Server.
      - Verify no raw source code or problem text is stored in `Content` or `Metadata` (only metadata summaries: platform, host, title, language, code line count, isTruncated).
+
+
+---
+
+## 12. Step 11: Side Panel UI Polish & Definition of Done Checks
+
+Follow these verification steps to manually audit the side panel design system, layout stability, and accessibility:
+
+### Check 1: Composer Always Visible & Never Clipped (DoD #1)
+1. **Window Height Testing (500px to 1200px):**
+   - Resize Chrome browser window down to 500px height.
+   - Verify the composer dock (input box + send button) remains fully visible with comfortable bottom padding (`12px + safe-area-inset`).
+   - Resize Chrome browser window up to 1200px height; verify composer remains neatly docked at the bottom.
+2. **Side Panel Width Testing (320px, 400px, 480px):**
+   - Drag Chrome side panel boundary to minimum width (~320px).
+   - Verify the context bar chips truncate cleanly into a single row with chevron toggle.
+   - Verify the composer input box and send button do not overlap or wrap awkwardly.
+   - Drag side panel width to 400px and 480px; verify fluid responsive expansion.
+3. **Browser Zoom Testing (100%, 125%, 150%):**
+   - In Chrome, press `Ctrl + +` to zoom to 125% and 150%.
+   - Verify the composer never pushes below the viewport or requires vertical page scroll to reach.
+4. **Stress Testing with Expanded Context & Error Banner:**
+   - Click the context bar summary row to expand problem details.
+   - Trigger a simulated error (e.g. rate limit error banner).
+   - Observe the message stream shrinking gracefully while the composer stays anchored and accessible.
+
+### Check 2: Rich Assistant Response & Zero Horizontal Page Scroll (DoD #2)
+1. **Send Complex Markdown Query:**
+   - In the composer, ask: *"Explain the optimal solution for Two Sum with headings, nested bullet lists, a comparison table, blockquote, inline code, a line of code over 100 characters, and a long URL."*
+2. **Verify Rendering:**
+   - **Headings**: H1, H2, and H3 render at readable chat scale (no oversized headings).
+   - **Nested Lists**: Bullet points indent properly with clean hierarchy.
+   - **Comparison Table**: Table renders inside `.table-wrapper` with horizontal scroll inside the wrapper; verify the main sidepanel window never develops horizontal scrollbars.
+   - **Blockquote**: Renders with warm accent left border and desaturated background.
+   - **Inline Code**: Clean dark chip with monospaced font and subtle border.
+   - **100+ Character Code Line**: Scrolls horizontally INSIDE the code block with slim header (language tag on left, Copy button on right).
+   - **Long URL**: Wraps cleanly without overflowing the container width.
+
+### Check 3: Codexo Icon in Toolbar & Side Panel (DoD #3)
+1. **Toolbar Icon:**
+   - Look at the Chrome toolbar: verify the official Codexo icon (warm orange lightning bolt on dark container) appears crisply at 16px, 32px, and 48px sizes (no default puzzle piece or blank icon).
+2. **Side Panel Header:**
+   - Open the side panel: verify the top-left header displays the Codexo mark SVG next to the "Codexo" brand title.
+3. **Build Artifacts:**
+   - Inspect `extension\dist\codexo\icons`: confirm `icon-16.png`, `icon-32.png`, `icon-48.png`, `icon-128.png`, and `codexo-mark.svg` are present.
+
+### Check 4: Zero-Flash Preload Theme (DoD #4)
+1. **Open Side Panel:**
+   - Close and re-open the side panel.
+   - Observe first paint: the background paints immediately as dark `#191918` (or `#FAF9F5` in light mode) with zero white flash.
+2. **CSP Inspection:**
+   - Open Chrome DevTools for the side panel (`Inspect`).
+   - Check the Console tab: verify zero Content Security Policy (CSP) errors or blocked script warnings.
+
+### Check 5: Accessibility, Contrast & Touch Targets (DoD #5)
+1. **Contrast Audit:**
+   - Verify primary text (`#F3F1EA` on `#191918`) achieves 15.3:1 contrast.
+   - Verify muted text (`#A8A59C` on `#191918`) achieves 7.0:1 contrast.
+   - Verify active send button (`#191918` on `#D97757`) achieves 5.58:1 contrast.
+   - In light mode (`prefers-color-scheme: light`), verify text contrast exceeds 5.1:1.
+2. **Interactive Target Sizes:**
+   - Inspect buttons (New Chat, History, Settings, Refresh, Send, Stop, Retry, Copy): verify each target is at least 32px by 32px.
+3. **Keyboard Navigation & Visible Focus Rings:**
+   - Press `Tab` repeatedly through all interactive controls.
+   - Verify every focused control displays a clear orange focus ring (`outline: 2px solid var(--color-accent)`).
+   - Verify screen reader accessible names via `aria-label` or `title` on every icon button.

@@ -26,6 +26,7 @@
 | C5 | Streaming | IMPLEMENTED | `main` | `b3d535c` | 2026-11-17 |
 | C6 | UI Polish | IMPLEMENTED | `main` | `b869a78` | 2026-11-17 |
 | C7 | History, Settings, Privacy | IMPLEMENTED | `main` | `c087960` | 2026-11-17 |
+| UI-POLISH | Side Panel Visual & Layout Overhaul | IMPLEMENTED | `feature/ui-polish` | `HEAD` | 2026-11-17 |
 | C8 | Hardening, Docs, Release | NOT IMPLEMENTED | — | — | — |
 
 ---
@@ -1617,3 +1618,11 @@ dotnet test Codexo.slnx
 ### Common Pitfalls
 - **Adding EF Core Entity Properties Without Migrations:** Adding a property to an entity that maps to a database column without creating and applying an EF Core migration will result in runtime SQL exceptions (`Invalid column name`) when querying the entity. Always run `dotnet ef migrations add` and `dotnet ef database update` when modifying entity properties.
 - **Cascade Delete Performance with Large Data Sets:** When deleting all conversations for a user, using EF Core's `RemoveRange()` loads the entities into memory to track state. For production databases with hundreds of thousands of messages, executing a direct SQL `ExecuteDeleteAsync()` is significantly faster: `_dbContext.Conversations.Where(c => c.UserId == userId).ExecuteDeleteAsync()`.
+
+
+## UI-POLISH: Side Panel Visual & Layout Overhaul
+
+### What We Learned
+1. **Viewport Flexbox Layout Isolation:** Using `100dvh`, `flex: none` on fixed header and composer, `flex: 1; min-height: 0; overflow-y: auto` on message streams, and collapsible 1-line context chips structurally eliminates bottom composer clipping regardless of viewport height (500–1200px), sidepanel width (320–480px), or zoom (100–150%).
+2. **CSP-Safe Theme Preloading:** In Chrome MV3 extensions, Angular's critical CSS inlining (Beasties) injects inline event handlers (`onload="this.media='all'"`) which violate MV3 CSP (`script-src 'self'`). Setting `optimization.styles.inlineCritical: false` and linking static `preload.css` directly paints theme backgrounds (`#191918` / `#FAF9F5`) on first paint with zero white flash and zero CSP violations.
+3. **Calm Design Token Architecture:** Defining semantic CSS variables (`tokens.scss`) modeled after Claude's warm palette guarantees WCAG AA contrast compliance (dark text 15.3:1, muted 7.0:1, accent 5.58:1; light text >16:1, muted 5.3:1) and maintains 32px touch targets across all interactive controls.

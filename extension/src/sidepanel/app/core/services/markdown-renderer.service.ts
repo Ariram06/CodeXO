@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { Marked } from 'marked';
+import { Marked, Tokens, RendererObject } from 'marked';
 import DOMPurify from 'dompurify';
 import katex from 'katex';
 import Prism from 'prismjs';
@@ -34,8 +34,8 @@ export class MarkdownRendererService {
   }
 
   private configureMarkedRenderer(): void {
-    const renderer = {
-      code: ({ text, lang }: { text: string; lang?: string }) => {
+    const renderer: RendererObject = {
+      code: ({ text, lang }: Tokens.Code) => {
         const rawLang = (lang || '').trim().toLowerCase();
         const normalizedLang = this.normalizeLanguage(rawLang);
         let highlighted = '';
@@ -63,14 +63,34 @@ export class MarkdownRendererService {
 </div>`;
       },
 
-      codespan: ({ text }: { text: string }) => {
+      codespan: ({ text }: Tokens.Codespan) => {
         return `<code class="inline-code">${this.escapeHtml(text)}</code>`;
       },
 
-      link: ({ href, title, text }: { href: string; title?: string | null; text: string }) => {
+      link: ({ href, title, text }: Tokens.Link) => {
         const cleanHref = href.startsWith('http://') || href.startsWith('https://') ? href : '#';
         const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
         return `<a href="${cleanHref}" target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`;
+      },
+
+      table(this: any, token: Tokens.Table) {
+        let t = '';
+        let n = '';
+        for (let s = 0; s < token.header.length; s++) {
+          n += this.tablecell(token.header[s]);
+        }
+        t += this.tablerow({ text: n });
+        let r = '';
+        for (let s = 0; s < token.rows.length; s++) {
+          const o = token.rows[s];
+          n = '';
+          for (let i = 0; i < o.length; i++) {
+            n += this.tablecell(o[i]);
+          }
+          r += this.tablerow({ text: n });
+        }
+        const body = r ? `<tbody>\n${r}</tbody>` : '';
+        return `<div class="table-wrapper"><table>\n<thead>\n${t}</thead>\n${body}\n</table></div>\n`;
       },
     };
 

@@ -43,6 +43,7 @@ export class App {
   readonly isUserScrolledUp = signal<boolean>(false);
   readonly chatError = signal<{ message: string; retryAfter?: number } | null>(null);
   readonly lastSentMessage = signal<string | null>(null);
+  readonly isContextExpanded = signal<boolean>(false);
 
   readonly userPreferences = signal<UserPreferenceDto | null>(null);
   readonly isPreferencesOpen = signal<boolean>(false);
@@ -123,6 +124,36 @@ export class App {
     return this.markdownRenderer.renderToSafeHtml(content);
   }
 
+  toggleContext(): void {
+    this.isContextExpanded.update((v) => !v);
+  }
+
+  onSelectQuickAction(prompt: string): void {
+    this.inputMessage.set(prompt);
+    this.onSendMessage();
+  }
+
+  onCopyAssistantMessage(content: string, event?: MouseEvent): void {
+    if (!content) return;
+    navigator.clipboard.writeText(content).then(() => {
+      if (event?.target) {
+        const btn = (event.target as HTMLElement).closest('button');
+        if (btn) {
+          const span = btn.querySelector('span');
+          const originalText = span?.textContent || 'Copy';
+          if (span) span.textContent = 'Copied!';
+          btn.classList.add('copied');
+          setTimeout(() => {
+            if (span) span.textContent = originalText;
+            btn.classList.remove('copied');
+          }, 2000);
+        }
+      }
+    }).catch((err) => {
+      console.error('Failed to copy response', err);
+    });
+  }
+
   onContainerScroll(event: Event): void {
     const element = event.target as HTMLElement;
     if (!element) return;
@@ -160,10 +191,10 @@ export class App {
 
     // Reset height to recalculate scrollHeight cleanly
     textarea.style.height = 'auto';
-    const lineHeight = 19; // px per line
-    const maxLines = 5;
-    const minHeight = 38;
-    const maxHeight = lineHeight * maxLines + 16; // line height + padding
+    const lineHeight = 20; // px per line
+    const maxLines = 6;
+    const minHeight = 24;
+    const maxHeight = lineHeight * maxLines + 16;
     const scrollHeight = textarea.scrollHeight;
 
     if (scrollHeight > maxHeight) {

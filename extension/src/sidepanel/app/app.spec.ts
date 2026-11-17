@@ -530,4 +530,122 @@ describe('App Component', () => {
     expect(app.messages().length).toBe(0);
     expect(app.isPreferencesOpen()).toBe(false);
   });
+
+  it('should render a complex markdown response with all rich elements inside panel width without overflow', () => {
+    const complexFixture = [
+      '# Solution Analysis',
+      '## Approach & Complexity',
+      '### Sub-problem decomposition',
+      '- Phase 1: Hash table lookup',
+      '  - Compute complementary target',
+      '  - Check map presence in O(1)',
+      '- Phase 2: Result return',
+      '',
+      '| Data Structure | Lookup Time | Space Overhead |',
+      '| :--- | :--- | :--- |',
+      '| Hash Table | O(1) avg | O(N) |',
+      '| Binary Search Tree | O(log N) | O(N) |',
+      '',
+      '> Important note: Ensure array bounds and integer overflow constraints are handled.',
+      '',
+      'Here is the inline code: `const complement = target - nums[i];` with calculations.',
+      '',
+      '```typescript',
+      'const veryLongConfigurationConstantWithManyParameters = function(alpha: number, beta: number, gamma: number, delta: number, epsilon: number, zeta: number, eta: number, theta: number): number { return alpha + beta + gamma + delta + epsilon + zeta + eta + theta; };',
+      '```',
+      '',
+      'Reference resource: https://www.example.com/a/very/long/path/with/lots/of/nested/subpaths/and/query/parameters/such/as/token/and/session/and/debugging/flags/to/test/overflow/wrap?param1=really_long_parameter_value_that_might_cause_overflow_issues_if_not_wrapped_properly&param2=another_long_string_of_characters_for_overflow_testing#anchor-reference-1234567890',
+    ].join('\n');
+
+    app.messages.set([
+      {
+        id: 'user-1',
+        role: 'user',
+        content: 'Give me complete analysis',
+        timestamp: new Date(),
+      },
+      {
+        id: 'asst-1',
+        role: 'assistant',
+        content: complexFixture,
+        timestamp: new Date(),
+        model: 'gemini-3.5-flash',
+      },
+    ]);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const markdownBody = compiled.querySelector('.markdown-body');
+    expect(markdownBody).not.toBeNull();
+
+    // Verify headings
+    expect(markdownBody?.querySelector('h1')?.textContent).toBe('Solution Analysis');
+    expect(markdownBody?.querySelector('h2')?.textContent).toBe('Approach & Complexity');
+    expect(markdownBody?.querySelector('h3')?.textContent).toBe('Sub-problem decomposition');
+
+    // Verify nested list
+    const lists = markdownBody?.querySelectorAll('ul');
+    expect(lists && lists.length).toBeGreaterThanOrEqual(1);
+
+    // Verify table wrapper and table
+    const tableWrapper = markdownBody?.querySelector('.table-wrapper');
+    expect(tableWrapper).not.toBeNull();
+    const table = tableWrapper?.querySelector('table');
+    expect(table).not.toBeNull();
+    expect(table?.textContent).toContain('Hash Table');
+
+    // Verify blockquote
+    const quote = markdownBody?.querySelector('blockquote');
+    expect(quote).not.toBeNull();
+    expect(quote?.textContent).toContain('Important note');
+
+    // Verify inline code
+    const inlineCode = markdownBody?.querySelector('code.inline-code');
+    expect(inlineCode).not.toBeNull();
+    expect(inlineCode?.textContent).toContain('target - nums[i]');
+
+    // Verify code block wrapper with pre and 100+ char line
+    const codeWrapper = markdownBody?.querySelector('.code-block-wrapper');
+    expect(codeWrapper).not.toBeNull();
+    const pre = codeWrapper?.querySelector('pre.code-pre');
+    expect(pre).not.toBeNull();
+    expect(pre?.textContent?.length).toBeGreaterThan(100);
+
+    // Verify long URL link
+    const link = markdownBody?.querySelector('a') as HTMLAnchorElement | null;
+    expect(link).not.toBeNull();
+    expect(link?.href).toContain('really_long_parameter_value');
+
+    // Verify assistant copy response action button
+    const copyMsgBtn = compiled.querySelector('.copy-msg-btn') as HTMLButtonElement | null;
+    expect(copyMsgBtn).not.toBeNull();
+  });
+
+  it('should toggle context bar between collapsed and expanded on click', () => {
+    expect(app.isContextExpanded()).toBe(false);
+
+    app.toggleContext();
+    expect(app.isContextExpanded()).toBe(true);
+
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('.context-expanded-content')).not.toBeNull();
+
+    app.toggleContext();
+    expect(app.isContextExpanded()).toBe(false);
+    fixture.detectChanges();
+    expect(compiled.querySelector('.context-expanded-content')).toBeNull();
+  });
+
+  it('should set input and trigger message on quick action button click', async () => {
+    app.onSelectQuickAction('Explain this problem\'s optimal approach');
+    await fixture.whenStable();
+    expect(mockApiClientService.streamMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Explain this problem\'s optimal approach',
+      }),
+      expect.any(Function),
+      expect.anything()
+    );
+  });
 });

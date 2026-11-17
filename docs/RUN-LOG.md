@@ -17,6 +17,7 @@
 | M11 | Side Panel UI | VERIFIED | 22/22 (Ext), 134/134 (.NET) | `feature/m11-side-panel-ui` | `feature/m11-side-panel-ui` | Standalone Angular components: Banner, Hint Ladder, Attempt Gating, Feedback, Preferences, Auth. |
 | M12 | Integration | VERIFIED | 25/25 (Ext), 136/136 (.NET) | `feature/m12-integration` | `feature/m12-integration` | Full multi-tier pipeline: DOM scrape -> Service Worker -> Sidepanel -> API -> AI -> Ladder; error recovery verified. |
 | M13 | Release | VERIFIED | 25/25 (Ext), 136/136 (.NET) | `feature/m13-release` | `feature/m13-release` | GitHub Actions CI/CD workflow, automated extension zip packaging (88 KB), production README. |
+| UI-POLISH | Side Panel Visual & Layout Overhaul | VERIFIED | 69/69 (Ext), 7/7 (.NET Core) | `feature/ui-polish` | `feature/ui-polish` | Strict flexbox layout (100dvh, composer docked, collapsible context bar), Claude-inspired warm tokens, sharp-generated icons, zero-flash preload, no runtime deps. |
 
 ---
 
@@ -46,6 +47,60 @@
   - *What:* Zero extra npm dependencies, instant packaging, and automated asset presence assertions.
   - *Why:* Keeps dependencies minimal without supply-chain bloat.
   - *Alternative rejected:* Adding third-party `archiver` or `adm-zip` npm dependencies.
+- **Decision 7 (UI Polish Flexbox Shell & Composer Docking):** Solved bottom edge clipping at root cause using strict viewport flexbox architecture.
+  - *What:* `html, body { height: 100%; margin: 0 }`, `.sidepanel-container` set to `display: flex; flex-direction: column; height: 100dvh; min-height: 0; overflow: hidden;`. Top header fixed at 44px (`flex: none`). Context bar collapses to one line (`flex: none; min-height: 32px`). Message container is `flex: 1; min-height: 0; overflow-y: auto;`. Composer dock is `flex: none; box-sizing: border-box; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px))`.
+  - *Why:* Guarantees the composer is 100% visible and unclipped across panel widths 320/400/480px, window heights 500–1200px, and zoom levels 100/125/150%, even with expanded context bar and error banners.
+  - *Alternative rejected:* Magic offsets, fixed positioning, or unconstrained margins that push the composer off-screen.
+- **Decision 8 (Claude-Inspired Warm Palette & Contrast Compliance):** Authored unified `tokens.scss` with dark default (`#191918` bg, `#222221` surface, `#2B2A28` surface-2, `#3A3835` border, `#F3F1EA` text, `#A8A59C` muted, `#D97757` accent, `#191918` text-on-accent) and light mode (`#FAF9F5` bg, `#FFFFFF` surface, `#1F1E1B` text, `#6B685F` muted, `#D97757` accent, `#B5502A` link/text).
+  - *What:* Contrast ratios verified: dark prose 15.3:1, dark muted 7.0:1, dark text-on-accent 5.58:1; light prose >16:1, light muted 5.3:1, light accent text 5.1:1 (all >= 4.5:1 WCAG AA). Touch targets enforced >= 32px; focus visible rings `0 0 0 2px var(--color-accent)`.
+  - *Why:* Ban list compliance: eliminates purple/blue gradients, neon colors, emoji button icons, and unreadable 10px chips.
+  - *Alternative rejected:* High-saturation default frameworks or uncalibrated contrast palettes.
+- **Decision 9 (Zero-Flash Theme Preload & CSP-Safe Optimization):** Linked `preload.css` directly from `index.html` and configured Angular application build with `optimization.styles.inlineCritical: false`.
+  - *What:* `preload.css` paints the theme background immediately on first paint before JS executes. Setting `inlineCritical: false` disables Beasties from generating inline scripts (`onload="this.media='all'"`) which violate MV3 CSP (`script-src 'self'`).
+  - *Why:* Eliminates white flash upon side panel opening while maintaining 100% strict MV3 Content Security Policy compliance.
+  - *Alternative rejected:* Inline `<script>` execution or post-paint theme switches.
+- **Decision 10 (Rasterized Original Geometric Codexo Mark):** Created `extension/scripts/generate-icons.mjs` using `sharp` (devDependency only) to generate 16, 32, 48, and 128 px PNGs from the original geometric Codexo mark (`#D97757` lightning bolt on `#191918` rounded container).
+  - *What:* Configured `manifest.json` `icons` and `action.default_icon` to reference `icons/icon-*.png`.
+  - *Why:* Chrome side panel and browser toolbar display official sharp branding without default puzzle piece or blank yellow icon.
+  - *Alternative rejected:* Unrasterized SVG only or manual image editing without repeatable script.
+
+---
+
+## 3. Multi-Platform Coding Compatibility Roadmap
+
+Per user directive, multi-platform coding platform compatibility is documented here as an architectural roadmap for upcoming implementation phases without violating the strict UI Polish scope lock:
+
+### Target Platforms
+1. **LeetCode** (`https://leetcode.com/*`) – Currently active
+2. **HackerRank** (`https://www.hackerrank.com/*`)
+3. **GeeksforGeeks (GFG)** (`https://www.geeksforgeeks.org/*`)
+4. **CodeChef** (`https://www.codechef.com/*`)
+5. **Codeforces** (`https://codeforces.com/*`)
+6. **AtCoder** (`https://atcoder.jp/*`)
+7. **InterviewBit** (`https://www.interviewbit.com/*`)
+8. **Coding Ninjas / Code360** (`https://www.naukri.com/code360/*`)
+
+### Implementation Phases & Scope Isolation
+- **Phase A: Host Permissions & Platform Detection**
+  - Add remaining platform URL patterns (`atcoder.jp`, `interviewbit.com`, `naukri.com/code360`) to `manifest.json` under `host_permissions` and `content_scripts.matches`.
+  - Centralize domain regex matchers in `src/content/platform-detector.ts`.
+- **Phase B: Modular Platform Adapter Architecture (`IPlatformAdapter`)**
+  - Create interface `IPlatformAdapter` with methods: `getProblemTitle()`, `getProblemStatement()`, `getLanguage()`, `getSampleTestCases()`, and `getConstraints()`.
+  - Isolate platform-specific DOM selectors into dedicated adapters: `LeetCodeAdapter`, `HackerRankAdapter`, `GeeksforGeeksAdapter`, `CodeChefAdapter`, `CodeforcesAdapter`, `AtCoderAdapter`, `InterviewBitAdapter`, `Code360Adapter`.
+  - Guarantee that DOM changes on one platform cannot cause uncaught exceptions on another.
+- **Phase C: Universal Editor Reader**
+  - Modularize `editor-reader.ts` to handle diverse web code editors:
+    - Monaco Editor (LeetCode, Code360, HackerRank)
+    - CodeMirror 5 & 6 (GeeksforGeeks, CodeChef)
+    - Ace Editor (Codeforces, InterviewBit)
+    - Native `<textarea>` fallbacks (AtCoder)
+- **Phase D: Privacy & Security Guardrails**
+  - Enforce zero extraction of authentication headers, session cookies, passwords, or personal account details.
+  - Prevent automated form submission or code submission buttons on the host platform.
+  - Keep extracted problem context strictly within existing client-side `PageContext` contracts.
+- **Phase E: Platform-Specific Test Fixtures**
+  - Save static HTML fixtures for each of the 8 platforms in `extension/tests/fixtures/platforms/`.
+  - Author unit tests for each adapter verifying problem title, statement, and language extraction with missing/delayed DOM elements.
 
 ---
 

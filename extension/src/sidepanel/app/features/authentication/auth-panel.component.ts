@@ -1,4 +1,4 @@
-import { Component, input, output, signal } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -11,25 +11,39 @@ import { FormsModule } from '@angular/forms';
       @if (currentUser()) {
         <div class="user-logged-in">
           <div class="user-info">
-            <span class="avatar-icon">👤</span>
+            <svg class="avatar-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
             <span class="user-email">{{ currentUser() }}</span>
           </div>
-          <button type="button" class="sign-out-btn" (click)="signOutClicked.emit()">Sign Out</button>
-        </div>
-      } @else {
-        <div class="auth-tabs">
           <button
             type="button"
+            class="sign-out-btn"
+            (click)="signOutClicked.emit()"
+            aria-label="Sign out of account"
+          >
+            Sign Out
+          </button>
+        </div>
+      } @else {
+        <div class="auth-tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
             class="tab-btn"
             [class.active]="isLoginMode"
+            [attr.aria-selected]="isLoginMode"
             (click)="isLoginMode = true"
           >
             Sign In
           </button>
           <button
             type="button"
+            role="tab"
             class="tab-btn"
             [class.active]="!isLoginMode"
+            [attr.aria-selected]="!isLoginMode"
             (click)="isLoginMode = false"
           >
             Register
@@ -45,6 +59,7 @@ import { FormsModule } from '@angular/forms';
               [(ngModel)]="email"
               name="email"
               required
+              aria-label="Email address"
             />
           </div>
           <div class="field-row">
@@ -56,15 +71,21 @@ import { FormsModule } from '@angular/forms';
               name="password"
               required
               minlength="8"
+              aria-label="Password"
             />
           </div>
 
           @if (authError()) {
-            <div class="auth-error">{{ authError() }}</div>
+            <div class="auth-error" role="alert">{{ authError() }}</div>
           }
 
           <div class="submit-row">
-            <button type="submit" class="auth-btn" [disabled]="isLoading() || !isValid()">
+            <button
+              type="submit"
+              class="auth-btn"
+              [disabled]="isLoading() || !isValid()"
+              [attr.aria-label]="isLoginMode ? 'Sign In' : 'Create Account'"
+            >
               {{ isLoading() ? 'Please wait...' : (isLoginMode ? 'Sign In' : 'Create Account') }}
             </button>
           </div>
@@ -74,9 +95,9 @@ import { FormsModule } from '@angular/forms';
   `,
   styles: [`
     .auth-box {
-      background: #18181b;
-      border: 1px solid #27272a;
-      border-radius: 8px;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-controls);
       padding: 10px 12px;
       margin-bottom: 12px;
     }
@@ -84,96 +105,139 @@ import { FormsModule } from '@angular/forms';
       display: flex;
       align-items: center;
       justify-content: space-between;
+      min-height: 32px;
     }
     .user-info {
       display: flex;
       align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      color: #e5e7eb;
+      gap: 8px;
+      font-size: var(--text-sm);
+      color: var(--color-text);
+      min-width: 0;
     }
     .avatar-icon {
-      font-size: 14px;
+      color: var(--color-muted);
+      flex-shrink: 0;
     }
     .user-email {
       font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .sign-out-btn {
-      background: #27272a;
-      border: 1px solid #3f3f46;
-      border-radius: 4px;
-      padding: 3px 8px;
-      font-size: 11px;
-      color: #9ca3af;
+      background: var(--color-surface-2);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      min-height: 32px;
+      padding: 0 10px;
+      font-size: var(--text-xs);
+      font-weight: 500;
+      color: var(--color-muted);
       cursor: pointer;
-    }
-    .sign-out-btn:hover {
-      background: #3f3f46;
-      color: #f3f4f6;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background var(--transition-fast), color var(--transition-fast);
+
+      &:hover {
+        background: var(--color-border);
+        color: var(--color-text);
+      }
     }
     .auth-tabs {
       display: flex;
-      gap: 4px;
-      margin-bottom: 8px;
+      gap: 6px;
+      margin-bottom: 10px;
     }
     .tab-btn {
       flex: 1;
-      background: #27272a;
-      border: none;
-      border-radius: 4px;
-      padding: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      color: #9ca3af;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: var(--radius-sm);
+      min-height: 32px;
+      padding: 0 8px;
+      font-size: var(--text-sm);
+      font-weight: 500;
+      color: var(--color-muted);
       cursor: pointer;
-    }
-    .tab-btn.active {
-      background: #3b82f6;
-      color: #ffffff;
+      transition: all var(--transition-fast);
+
+      &:hover {
+        color: var(--color-text);
+      }
+
+      &.active {
+        background: var(--color-surface-2);
+        border-color: var(--color-border);
+        color: var(--color-text);
+        font-weight: 600;
+      }
     }
     .auth-form {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 8px;
     }
     .auth-input {
       width: 100%;
+      height: 34px;
       box-sizing: border-box;
-      background: #141418;
-      border: 1px solid #27272a;
-      border-radius: 4px;
-      padding: 6px 8px;
-      font-size: 12px;
-      color: #f3f4f6;
-    }
-    .auth-input:focus {
-      outline: none;
-      border-color: #3b82f6;
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      padding: 0 10px;
+      font-size: var(--text-sm);
+      color: var(--color-text);
+      font-family: inherit;
+      transition: border-color var(--transition-fast);
+
+      &::placeholder {
+        color: var(--color-muted);
+      }
+
+      &:focus {
+        outline: none;
+        border-color: var(--color-accent);
+      }
     }
     .auth-error {
-      font-size: 11px;
-      color: #fca5a5;
-      background: rgba(239, 68, 68, 0.15);
-      padding: 4px 6px;
-      border-radius: 4px;
+      font-size: var(--text-xs);
+      color: var(--color-error-text);
+      background: var(--color-error-bg);
+      border: 1px solid var(--color-error-border);
+      padding: 6px 8px;
+      border-radius: var(--radius-sm);
+      line-height: 1.4;
     }
     .submit-row {
       display: flex;
       justify-content: flex-end;
+      margin-top: 2px;
     }
     .auth-btn {
-      background: #2563eb;
-      color: #ffffff;
+      background: var(--color-accent);
+      color: var(--color-text-on-accent);
       border: none;
-      border-radius: 4px;
-      padding: 5px 12px;
-      font-size: 11px;
+      border-radius: var(--radius-sm);
+      min-height: 32px;
+      padding: 0 14px;
+      font-size: var(--text-sm);
       font-weight: 600;
       cursor: pointer;
-    }
-    .auth-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background var(--transition-fast);
+
+      &:hover:not(:disabled) {
+        background: var(--color-accent-hover);
+      }
+
+      &:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
     }
   `]
 })
