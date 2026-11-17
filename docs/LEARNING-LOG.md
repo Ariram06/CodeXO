@@ -22,7 +22,7 @@
 | C1 | Chat Core (Backend) | IMPLEMENTED | `main` | `1b1c3e3` | 2026-11-16 |
 | C2 | Real Gemini for Chat | IMPLEMENTED | `main` | `b85e80d` | 2026-11-16 |
 | C3 | Minimal Chat UI | IMPLEMENTED | `main` | `a61ba7b` | 2026-11-17 |
-| C4 | Context Collection | IMPLEMENTED | `main` | `feature/c4-context-collection` | 2026-11-17 |
+| C4 | Context Collection | IMPLEMENTED | `main` | `e65f92b` | 2026-11-17 |
 | C5 | Streaming | NOT IMPLEMENTED | — | — | — |
 | C6 | UI Polish | NOT IMPLEMENTED | — | — | — |
 | C7 | History, Settings, Privacy | NOT IMPLEMENTED | — | — | — |
