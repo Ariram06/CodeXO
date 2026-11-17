@@ -21,7 +21,7 @@
 | M13 | Release | IMPLEMENTED | `main` | `4c70a0b` | 2026-11-16 |
 | C1 | Chat Core (Backend) | IMPLEMENTED | `main` | `1b1c3e3` | 2026-11-16 |
 | C2 | Real Gemini for Chat | IMPLEMENTED | `main` | `b85e80d` | 2026-11-16 |
-| C3 | Minimal Chat UI | NOT IMPLEMENTED | — | — | — |
+| C3 | Minimal Chat UI | IMPLEMENTED | `main` | `a61ba7b` | 2026-11-17 |
 | C4 | Context Collection | NOT IMPLEMENTED | — | — | — |
 | C5 | Streaming | NOT IMPLEMENTED | — | — | — |
 | C6 | UI Polish | NOT IMPLEMENTED | — | — | — |
@@ -1176,3 +1176,71 @@ dotnet test Codexo.slnx
 
 ### Common Pitfalls
 - **Overriding global rate limits in integration tests:** When tests use `WebApplicationFactory.WithWebHostBuilder` to set `RateLimiting:PermitLimitPerMinute`, ensure that specific policy keys (like `ChatPermitLimitPerMinute`) in `appsettings.json` do not take unconditional precedence and mask test configuration overrides.
+
+---
+
+## C3: Minimal Chat UI (First End-to-End Slice)
+
+### What We Built
+We established the end-to-end chat experience in the Chrome side panel Angular application. We removed the legacy 5-level hint ladder and attempt-gating UI components, simplified `api-contracts.ts` and `api-client.service.ts` for chat messages, implemented a chronological message stream with typing indicators and model badges, created a multi-line composer with `Enter` (send) vs `Shift+Enter` (newline) semantics, integrated active tab context (platform, url, title) via `ExtensionBridgeService`, added specific error banners with an interactive `Retry` button, and updated `docs/MANUAL-TEST.md`.
+
+### Concepts
+- **Keyboard-Driven Chat Ergonomics:** In developer chat assistants, multi-line code drafting must be distinguished from message submission. Intercepting `keydown` events allows `Enter` without modifiers to trigger `sendMessage()`, while `Shift+Enter` falls through to insert a newline. File: [extension/src/sidepanel/app/app.ts](file:///c:/Ariram/CodeXO/extension/src/sidepanel/app/app.ts).
+- **Transient Context Aggregation:** C3 scopes initial page context to active Chrome tab metadata (`url`, `title`, and inferred platform) via `chrome.tabs.query({ active: true, currentWindow: true })`. This establishes full client-to-backend context forwarding before DOM injection in C4. File: [extension/src/sidepanel/app/core/services/extension-bridge.service.ts](file:///c:/Ariram/CodeXO/extension/src/sidepanel/app/core/services/extension-bridge.service.ts).
+- **Stateful Error Recovery with Retry:** API rejections (429 rate limit or 503 unavailable) preserve the user's prompt in component state (`lastSentMessage`), displaying an actionable error banner with a Retry button that immediately resends without requiring retyping. File: [extension/src/sidepanel/app/app.ts](file:///c:/Ariram/CodeXO/extension/src/sidepanel/app/app.ts).
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant App as Angular App (Sidepanel)
+    participant Bridge as ExtensionBridgeService
+    participant API as ApiClientService
+    participant Backend as Codexo.Api (POST /api/chat/messages)
+
+    Dev->>App: Types question & hits Enter
+    App->>Bridge: refreshActiveTabContext()
+    Bridge-->>App: PageContext { platform, url, title }
+    App->>App: Render user bubble & show typing indicator
+    App->>API: sendMessage({ message, context })
+    API->>Backend: HTTP POST /api/chat/messages
+    alt Success
+        Backend-->>API: 200 OK { content, model, conversationId }
+        API-->>App: ChatMessageResponse
+        App->>App: Render assistant bubble & scroll to bottom
+    else Failure (429 / 503)
+        Backend-->>API: HTTP Error
+        API-->>App: Error details
+        App->>App: Render error banner with "Retry"
+        Dev->>App: Clicks "Retry"
+        App->>API: Resends last message
+    end
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Dedicated Retry button preserved in component error state.
+  *Rejected alternative:* Toast notifications with no retry action. Forcing developers to manually copy-paste failed prompts during network or rate-limit glitches harms usability.
+- **Decision:** Complete removal of hint-ladder components from the codebase.
+  *Rejected alternative:* Hiding ladder components behind feature flags. Keeping dead code increases bundle size and complicates testing without adding value.
+
+### Interview Questions & Model Answers
+- **Q: Why does the side panel use `chrome.tabs.query` to capture active tab context when the user sends a message rather than relying on background push events?**
+  *A:* Senders need the ground truth context at the exact moment of interaction. Users frequently switch tabs or navigate between problems. Querying the active tab at send-time guarantees that the AI prompt receives the exact URL and problem title currently open in front of the developer.
+- **Q: Why should chat composers handle `Shift+Enter` explicitly in Angular rather than relying on standard form submission?**
+  *A:* Standard form `<form>` or `<textarea>` elements either treat Enter as a plain newline or immediately submit forms without multi-line support. Handling keydown events explicitly enables desktop-grade chat UX: single Enter sends, while Shift+Enter allows writing code snippets with indentation and breaks.
+
+### Run & Test Commands
+```powershell
+# Run Angular extension tests
+npm --prefix extension test -- --watch=false
+
+# Build production extension package
+npm --prefix extension run build
+
+# Run backend test suite
+dotnet test Codexo.slnx
+```
+
+### Common Pitfalls
+- **Async Component State in Unit Tests:** When `onSendMessage` awaits `refreshActiveTabContext()`, testing keydown events requires calling `await fixture.whenStable()` before asserting that `mockApiClientService.sendMessage` was invoked.
