@@ -26,7 +26,7 @@
 | C5 | Streaming | IMPLEMENTED | `main` | `b3d535c` | 2026-11-17 |
 | C6 | UI Polish | IMPLEMENTED | `main` | `b869a78` | 2026-11-17 |
 | C7 | History, Settings, Privacy | IMPLEMENTED | `main` | `c087960` | 2026-11-17 |
-| UI-POLISH | Side Panel Visual & Layout Overhaul | IMPLEMENTED | `feature/ui-polish` | `HEAD` | 2026-11-17 |
+| UI-POLISH | Side Panel Visual & Layout Overhaul | IMPLEMENTED | `main` | `9561282..f6a9825` | 2026-11-17 |
 | C8 | Hardening, Docs, Release | NOT IMPLEMENTED | — | — | — |
 
 ---
