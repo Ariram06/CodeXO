@@ -23,7 +23,7 @@
 | C2 | Real Gemini for Chat | IMPLEMENTED | `main` | `b85e80d` | 2026-11-16 |
 | C3 | Minimal Chat UI | IMPLEMENTED | `main` | `a61ba7b` | 2026-11-17 |
 | C4 | Context Collection | IMPLEMENTED | `main` | `e65f92b` | 2026-11-17 |
-| C5 | Streaming | IMPLEMENTED | `feature/c5-streaming` | `cdb20c6` | 2026-11-17 |
+| C5 | Streaming | IMPLEMENTED | `main` | `b3d535c` | 2026-11-17 |
 | C6 | UI Polish | NOT IMPLEMENTED | — | — | — |
 | C7 | History, Settings, Privacy | NOT IMPLEMENTED | — | — | — |
 | C8 | Hardening, Docs, Release | NOT IMPLEMENTED | — | — | — |
