@@ -8,4 +8,9 @@ public interface IChatService
         string userId,
         SendMessageRequest request,
         CancellationToken cancellationToken = default);
+
+    IAsyncEnumerable<ChatStreamChunk> StreamMessageAsync(
+        string userId,
+        SendMessageRequest request,
+        CancellationToken cancellationToken = default);
 }

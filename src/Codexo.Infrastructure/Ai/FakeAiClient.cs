@@ -1,5 +1,6 @@
 namespace Codexo.Infrastructure.AI;
 
+using System.Runtime.CompilerServices;
 using System.Text;
 using Codexo.Core.AI;
 
@@ -38,5 +39,29 @@ public class FakeAiClient : IAiClient
         sb.AppendLine("- **Space Complexity**: $O(N)$ auxiliary hash table space.");
 
         return Task.FromResult(sb.ToString());
+    }
+
+    public async IAsyncEnumerable<string> StreamChatResponseAsync(
+        string systemPrompt,
+        IEnumerable<(string Role, string Content)> history,
+        string userPrompt,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userPrompt);
+
+        var fullResponse = await GenerateChatResponseAsync(systemPrompt, history, userPrompt, cancellationToken);
+        var words = fullResponse.Split(' ');
+
+        for (var i = 0; i < words.Length; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var chunk = i == words.Length - 1 ? words[i] : words[i] + " ";
+            yield return chunk;
+
+            // Small asynchronous yield to simulate streaming token delivery
+            var delayMs = userPrompt.Contains("cancel", StringComparison.OrdinalIgnoreCase) ? 150 : 10;
+            await Task.Delay(delayMs, cancellationToken);
+        }
     }
 }

@@ -23,7 +23,7 @@
 | C2 | Real Gemini for Chat | IMPLEMENTED | `main` | `b85e80d` | 2026-11-16 |
 | C3 | Minimal Chat UI | IMPLEMENTED | `main` | `a61ba7b` | 2026-11-17 |
 | C4 | Context Collection | IMPLEMENTED | `main` | `e65f92b` | 2026-11-17 |
-| C5 | Streaming | NOT IMPLEMENTED | — | — | — |
+| C5 | Streaming | IMPLEMENTED | `feature/c5-streaming` | `cdb20c6` | 2026-11-17 |
 | C6 | UI Polish | NOT IMPLEMENTED | — | — | — |
 | C7 | History, Settings, Privacy | NOT IMPLEMENTED | — | — | — |
 | C8 | Hardening, Docs, Release | NOT IMPLEMENTED | — | — | — |
@@ -1321,3 +1321,100 @@ dotnet test Codexo.slnx
 ### Common Pitfalls
 - **Closure Scope in `chrome.scripting.executeScript`:** Functions passed as `func` to `executeScript` are serialized into strings and evaluated in the target page's context. They cannot access outer scope variables or imported modules; any helper logic must be contained within the function or use standard browser globals.
 - **Mocking `chrome.runtime.sendMessage` in Angular Unit Tests:** If mock implementations return generic static payloads (like `'PONG'`) for all message types, asynchronous methods expecting structured typed responses (like `PageContextPayload`) will fail. The mock must inspect `message.type` and respond with appropriate mock contracts.
+
+---
+
+## C5: Streaming
+
+### What We Built
+In Module C5, we implemented end-to-end token streaming and upstream cancellation across both the ASP.NET Core backend and the Chrome extension side panel:
+1. **Backend Server-Sent Events (`POST /api/chat/stream`):**
+   - Implemented `StreamChatResponseAsync` in `IAiClient`, `FakeAiClient`, and `OpenAiCompatibleAiClient` using Server-Sent Events (`data: {...}\n\n` with `data: [DONE]`).
+   - `ChatService.StreamMessageAsync` coordinates streaming chunks through `IAsyncEnumerable<ChatStreamChunk>`, persisting the initial user message immediately and using a `finally` block with `CancellationToken.None` to reliably persist completed or partially streamed assistant messages upon client abort.
+   - `ChatController.StreamMessage` sets `Content-Type: text/event-stream`, flushes each chunk in real time, and gracefully absorbs client disconnects (`OperationCanceledException` and `IOException`).
+2. **Side Panel Incremental Rendering & Cancellation:**
+   - In `api-client.service.ts`, implemented `streamMessage()` consuming the SSE stream using `fetch()` and `ReadableStreamDefaultReader` with Bearer auth headers, buffering partial lines and calling `onChunk(delta)` as tokens arrive.
+   - Attached an abort handler to `reader.cancel()` so that triggering `AbortSignal` immediately unblocks stream reading and halts network traffic.
+   - Built automatic non-streaming fallback to `POST /api/chat/messages` if the streaming connection encounters network or transport issues.
+   - In `app.ts`, `app.html`, and `app.scss`, wired the streaming state to an incremental assistant message bubble with a blinking streaming cursor (`▊`) and transformed the composer action into an active **⏹ Stop** button during generation.
+   - Verified that clicking "Stop Generating" aborts upstream generation, retains the partial text in the UI, and saves `[Generation stopped]` to the database.
+
+### Concepts
+- **Server-Sent Events (SSE) with HTTP POST & Bearer Auth:** Standard browser `EventSource` only supports HTTP GET and does not allow custom request headers (such as `Authorization: Bearer <token>`). By using `fetch` with `ReadableStream` (`response.body.getReader()`), client applications can send complex JSON bodies via POST with full authorization headers while maintaining high-performance token-by-token streaming.
+- **Async Iterator Disposal & Cancellation Persistence:** In C# `IAsyncEnumerable<T>`, when an iteration terminates early (due to consumer cancellation or network disconnect), runtime execution jumps immediately to the `finally` block via `IAsyncDisposable.DisposeAsync()`. To persist partial progress without failing from the aborted cancellation token, database writes within the `finally` block must use an uncancelled token (`CancellationToken.None`).
+- **Defensive Line Buffering in Stream Readers:** Network chunking does not guarantee that chunks align with SSE message boundaries (`\n\n`). A robust stream parser must accumulate incoming bytes into a string buffer, split by newlines, and retain incomplete trailing fragments until the next chunk arrives.
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant SidePanel as Side Panel (Angular)
+    participant ApiClient as ApiClientService (fetch)
+    participant Api as ChatController (/api/chat/stream)
+    participant Service as ChatService
+    participant Gemini as OpenAiCompatibleAiClient (Gemini)
+    participant DB as SQL Server (EF Core)
+
+    User->>SidePanel: Enters question & clicks Send
+    SidePanel->>DB: (via ApiClient) User message sent
+    SidePanel->>ApiClient: streamMessage(request, onChunk, abortSignal)
+    ApiClient->>Api: POST /api/chat/stream (Bearer token)
+    Api->>Service: StreamMessageAsync(userId, request, token)
+    Service->>DB: Save User Message
+    Service->>Gemini: StreamChatResponseAsync (stream: true)
+    
+    loop Token Generation
+        Gemini-->>Service: SSE token delta
+        Service-->>Api: yield ChatStreamChunk
+        Api-->>ApiClient: data: {"delta": "...", "isDone": false}\n\n
+        ApiClient-->>SidePanel: onChunk(delta)
+        SidePanel->>SidePanel: Incremental render + auto-scroll
+    end
+
+    alt Stream Completes
+        Gemini-->>Service: [DONE]
+        Service->>DB: Save complete Assistant Message
+        Api-->>ApiClient: data: [DONE]\n\n
+        SidePanel->>SidePanel: Finalize assistant message
+    else User Clicks "Stop Generating"
+        User->>SidePanel: Clicks [⏹ Stop]
+        SidePanel->>ApiClient: AbortController.abort()
+        ApiClient->>Api: TCP RST / Connection Aborted
+        Api->>Service: CancellationToken canceled
+        Service->>DB: Save partial Assistant Message + "[Generation stopped]" (CancellationToken.None)
+        SidePanel->>SidePanel: Keep partial text, hide Stop button
+    end
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Use `fetch` + `ReadableStream` instead of browser `EventSource`.
+  *Rejected alternative:* `EventSource`. `EventSource` is limited to HTTP GET and does not support sending Bearer authentication headers or structured `PageContext` payloads without clumsy URL query parameter encoding.
+- **Decision:** Persist partial assistant responses in the database upon client cancellation with `[Generation stopped]` marker.
+  *Rejected alternative:* Discarding partial responses on abort. Retaining what was generated ensures audit logging accuracy, allows users to reference partial output, and provides accurate context for multi-turn conversations.
+- **Decision:** Resilient non-streaming fallback in `api-client.service.ts`.
+  *Rejected alternative:* Failing immediately if streaming connection drops. Graceful degradation to single-response POST ensures reliable user experience even across proxy environments that buffer or drop HTTP chunked transfers.
+
+### Interview Questions & Model Answers
+- **Q: Why can't the standard browser `EventSource` API be used for authenticated AI streaming in modern web apps?**
+  *A:* The standard browser `EventSource` API is restricted to HTTP GET requests and provides no native mechanism to pass custom HTTP headers (such as `Authorization: Bearer <jwt>`). Passing tokens in URL query strings exposes secrets in access logs and browser history. Using `fetch` combined with `response.body.getReader()` allows full control over HTTP method, request headers, body payload, and cancellation via `AbortController`.
+- **Q: How does C# handle early termination of an `IAsyncEnumerable<T>`, and why is `CancellationToken.None` required for partial persistence?**
+  *A:* When an `IAsyncEnumerable<T>` consumer stops enumerating early (e.g. from an `OperationCanceledException` thrown while writing to an aborted network connection), the runtime disposes the enumerator, triggering the generator's `finally` block. However, the original `CancellationToken` is already signaled. Attempting to execute `await _dbContext.SaveChangesAsync(cancellationToken)` would immediately throw another `OperationCanceledException`. Passing `CancellationToken.None` explicitly to the persistence call guarantees the partial message is reliably committed.
+- **Q: Why must stream parsers buffer incomplete chunks rather than simply processing incoming chunks as individual SSE messages?**
+  *A:* TCP and HTTP transport chunking is based on network packet sizes and OS socket buffers, not application message boundaries. A single SSE message (`data: {...}\n\n`) may be fragmented across two network chunks, or multiple SSE messages may arrive in a single packet. A stream reader must concatenate incoming text to an internal buffer and split on newline delimiters, retaining trailing incomplete slices until the next read.
+
+### Run & Test Commands
+```powershell
+# Run Angular extension tests (50 tests passing across 9 suites)
+npm --prefix extension test -- --watch=false
+
+# Build production extension package
+npm --prefix extension run build
+
+# Run complete backend test suite (51 tests passing)
+dotnet test Codexo.slnx
+```
+
+### Common Pitfalls
+- **Resource Disposal Ordering During Cancellation Testing:** In integration tests using `TestServer`, failing to dispose client `HttpResponseMessage` and content streams upon client cancellation leaves the underlying pipe open, preventing the server from detecting connection abort. Enclosing client streams in `try/using` blocks ensures immediate transport closure upon abort.
+- **JSON Property Naming Inconsistencies:** Serializing SSE chunks on the server with default PascalCase while the client TypeScript interface expects camelCase can cause `undefined` fields or silent parsing errors. Configuring `JsonNamingPolicy.CamelCase` for SSE serialization ensures cross-platform consistency.

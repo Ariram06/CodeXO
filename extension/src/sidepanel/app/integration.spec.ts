@@ -63,6 +63,16 @@ describe('End-to-End Chat Integration Flow (Tab Context -> Bridge -> Sidepanel -
           outputTokens: 88,
         } as ChatMessageResponse)
       ),
+      streamMessage: vi.fn(async (req: SendMessageRequest, onChunk: (d: string) => void) => {
+        const content = 'The optimal Two Sum solution uses a hash map to achieve O(n) time and O(n) space complexity.';
+        onChunk(content);
+        return {
+          conversationId: 'conv-e2e-1',
+          messageId: 'msg-asst-101',
+          fullContent: content,
+          model: 'gemini-3.5-flash-lite',
+        };
+      }),
       updatePreferences: vi.fn(),
       clearToken: vi.fn(),
     };
@@ -93,7 +103,7 @@ describe('End-to-End Chat Integration Flow (Tab Context -> Bridge -> Sidepanel -
     fixture.detectChanges();
 
     // 3. Verify API client received message and active page context
-    expect(mockApiClient.sendMessage).toHaveBeenCalledWith(
+    expect(mockApiClient.streamMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         message: 'What is the time complexity of the optimal Two Sum solution?',
         context: expect.objectContaining({
@@ -101,7 +111,9 @@ describe('End-to-End Chat Integration Flow (Tab Context -> Bridge -> Sidepanel -
           url: 'https://leetcode.com/problems/two-sum/',
           title: 'Two Sum - LeetCode',
         }),
-      })
+      }),
+      expect.any(Function),
+      expect.anything()
     );
 
     // 4. Verify messages rendered in the DOM
@@ -118,25 +130,17 @@ describe('End-to-End Chat Integration Flow (Tab Context -> Bridge -> Sidepanel -
   });
 
   it('should handle API rate limit 429 with specific error banner and retry capability', async () => {
-    mockApiClient.sendMessage = vi.fn()
-      .mockImplementationOnce(() =>
-        throwError(() => ({
-          status: 429,
-          error: { message: 'Too many requests. Please wait a moment.', retryAfterSeconds: 60 },
-        }))
-      )
-      .mockImplementationOnce(() =>
-        of({
-          conversationId: 'conv-e2e-retry',
-          messageId: 'msg-asst-102',
-          role: 'assistant',
-          content: 'Here is the requested explanation after waiting for backoff.',
-          createdAtUtc: new Date().toISOString(),
-          model: 'gemini-3.5-flash-lite',
-          inputTokens: 20,
-          outputTokens: 40,
-        })
-      );
+    mockApiClient.streamMessage = vi.fn()
+      .mockRejectedValueOnce({
+        status: 429,
+        error: { message: 'Too many requests. Please wait a moment.', retryAfterSeconds: 60 },
+      })
+      .mockResolvedValueOnce({
+        conversationId: 'conv-e2e-retry',
+        messageId: 'msg-asst-102',
+        fullContent: 'Here is the requested explanation after waiting for backoff.',
+        model: 'gemini-3.5-flash-lite',
+      });
 
     app.inputMessage.set('Explain the two-pointer approach');
     await app.onSendMessage();
@@ -155,7 +159,7 @@ describe('End-to-End Chat Integration Flow (Tab Context -> Bridge -> Sidepanel -
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(mockApiClient.sendMessage).toHaveBeenCalledTimes(2);
+    expect(mockApiClient.streamMessage).toHaveBeenCalledTimes(2);
     expect(app.chatError()).toBeNull();
     expect(app.messages().some((m) => m.content.includes('Here is the requested explanation'))).toBe(true);
   });

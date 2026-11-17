@@ -42,6 +42,8 @@ export class App {
   readonly isPreferencesOpen = signal<boolean>(false);
   readonly authError = signal<string | null>(null);
 
+  private activeAbortController: AbortController | null = null;
+
   constructor() {
     // Load preferences when authenticated
     effect(() => {
@@ -90,10 +92,22 @@ export class App {
   }
 
   onSignOut(): void {
+    this.onStopGenerating();
     this.api.clearToken();
     this.messages.set([]);
     this.conversationId.set(null);
     this.chatError.set(null);
+  }
+
+  onStopGenerating(): void {
+    if (this.activeAbortController) {
+      this.activeAbortController.abort();
+      this.activeAbortController = null;
+    }
+    this.isLoading.set(false);
+    this.messages.update((prev) =>
+      prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
+    );
   }
 
   onKeyDown(event: KeyboardEvent): void {
@@ -129,47 +143,99 @@ export class App {
       code: this.bridge.includeCode() ? rawContext.code : undefined,
     };
 
-    this.api.sendMessage({
-      conversationId: this.conversationId() ?? undefined,
-      message: text,
-      context,
-    }).subscribe({
-      next: (response: ChatMessageResponse) => {
-        this.conversationId.set(response.conversationId);
-        const assistantMessage: ChatMessageItem = {
-          id: response.messageId,
-          role: 'assistant',
-          content: response.content,
-          timestamp: new Date(response.createdAtUtc),
-          model: response.model,
-        };
-        this.messages.update((prev) => [...prev, assistantMessage]);
-        this.isLoading.set(false);
-        this.scrollToBottom();
-      },
-      error: (err) => {
-        this.isLoading.set(false);
-        let errorMsg = 'Failed to generate response.';
-        let retryAfter: number | undefined;
+    const assistantMessageId = crypto.randomUUID();
+    const assistantMessage: ChatMessageItem = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      isStreaming: true,
+    };
+    this.messages.update((prev) => [...prev, assistantMessage]);
 
-        if (err.status === 429) {
-          errorMsg = err.error?.message || 'Rate limit exceeded. Please wait a moment before sending another message.';
-          retryAfter = err.error?.retryAfterSeconds;
-        } else if (err.status === 503) {
-          errorMsg = err.error?.message || 'AI service is temporarily unavailable. Please try again shortly.';
-        } else if (err.status === 401) {
-          errorMsg = 'Session expired. Please sign in again.';
-          this.api.clearToken();
-        } else if (err.error?.message) {
-          errorMsg = err.error.message;
-        } else if (err.message) {
-          errorMsg = err.message;
+    this.activeAbortController = new AbortController();
+
+    try {
+      const result = await this.api.streamMessage(
+        {
+          conversationId: this.conversationId() ?? undefined,
+          message: text,
+          context,
+        },
+        (delta: string) => {
+          this.messages.update((prev) =>
+            prev.map((m) =>
+              m.id === assistantMessageId
+                ? { ...m, content: m.content + delta }
+                : m
+            )
+          );
+          this.scrollToBottom();
+        },
+        this.activeAbortController.signal
+      );
+
+      if (result.conversationId) {
+        this.conversationId.set(result.conversationId);
+      }
+
+      this.messages.update((prev) =>
+        prev.map((m) =>
+          m.id === assistantMessageId
+            ? {
+                ...m,
+                id: result.messageId || m.id,
+                content: result.fullContent || m.content,
+                model: result.model || m.model,
+                isStreaming: false,
+              }
+            : m
+        )
+      );
+    } catch (err: any) {
+      if (this.activeAbortController?.signal.aborted) {
+        this.messages.update((prev) =>
+          prev.map((m) =>
+            m.id === assistantMessageId ? { ...m, isStreaming: false } : m
+          )
+        );
+        return;
+      }
+
+      // If error occurred and no content was generated at all, remove placeholder
+      this.messages.update((prev) => {
+        const found = prev.find((m) => m.id === assistantMessageId);
+        if (found && !found.content) {
+          return prev.filter((m) => m.id !== assistantMessageId);
         }
+        return prev.map((m) =>
+          m.id === assistantMessageId ? { ...m, isStreaming: false } : m
+        );
+      });
 
-        this.chatError.set({ message: errorMsg, retryAfter });
-        this.scrollToBottom();
-      },
-    });
+      let errorMsg = 'Failed to generate response.';
+      let retryAfter: number | undefined;
+
+      if (err.status === 429) {
+        errorMsg = err.error?.message || 'Rate limit exceeded. Please wait a moment before sending another message.';
+        retryAfter = err.error?.retryAfterSeconds;
+      } else if (err.status === 503) {
+        errorMsg = err.error?.message || 'AI service is temporarily unavailable. Please try again shortly.';
+      } else if (err.status === 401) {
+        errorMsg = 'Session expired. Please sign in again.';
+        this.api.clearToken();
+      } else if (err.error?.message) {
+        errorMsg = err.error.message;
+      } else if (err.message) {
+        errorMsg = err.message;
+      }
+
+      this.chatError.set({ message: errorMsg, retryAfter });
+    } finally {
+      this.activeAbortController = null;
+      this.isLoading.set(false);
+      this.scrollToBottom();
+    }
   }
 
   onRetry(): void {

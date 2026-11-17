@@ -2,6 +2,7 @@ namespace Codexo.Infrastructure.AI;
 
 using System.Net;
 using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using Codexo.Core.AI;
@@ -10,7 +11,7 @@ using Microsoft.Extensions.Options;
 
 /// <summary>
 /// Production AI client communicating with OpenAI-compatible endpoints (such as Google Gemini via its OpenAI compatibility API).
-/// Enforces timeout handling, token usage logging, and structured error mapping.
+/// Enforces timeout handling, token usage logging, structured error mapping, and streaming support.
 /// </summary>
 public class OpenAiCompatibleAiClient : IAiClient
 {
@@ -127,47 +128,7 @@ public class OpenAiCompatibleAiClient : IAiClient
         // Handle provider-specific HTTP status codes
         if (!response.IsSuccessStatusCode)
         {
-            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-            {
-                throw new AiAuthenticationException(
-                    "AI provider rejected authentication. Please verify that your Gemini API key is valid and active.");
-            }
-
-            if (response.StatusCode == (HttpStatusCode)429)
-            {
-                TimeSpan? retryAfter = null;
-                if (response.Headers.RetryAfter != null)
-                {
-                    if (response.Headers.RetryAfter.Delta.HasValue)
-                    {
-                        retryAfter = response.Headers.RetryAfter.Delta.Value;
-                    }
-                    else if (response.Headers.RetryAfter.Date.HasValue)
-                    {
-                        var diff = response.Headers.RetryAfter.Date.Value - DateTimeOffset.UtcNow;
-                        retryAfter = diff > TimeSpan.Zero ? diff : TimeSpan.FromSeconds(1);
-                    }
-                }
-
-                throw new AiQuotaExceededException(
-                    "AI rate limit or quota exceeded. Please try again shortly.", retryAfter);
-            }
-
-            if (response.StatusCode == HttpStatusCode.NotFound)
-            {
-                throw new AiServiceUnavailableException(
-                    $"AI model '{_settings.Model}' is not found or unavailable on the configured endpoint.");
-            }
-
-            if ((int)response.StatusCode >= 500)
-            {
-                throw new AiServiceUnavailableException(
-                    $"AI provider server error (HTTP {(int)response.StatusCode}: {response.ReasonPhrase}).");
-            }
-
-            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new AiClientException(
-                $"AI provider rejected request with HTTP {(int)response.StatusCode}: {response.ReasonPhrase}. Details: {errorBody}");
+            await HandleErrorStatusCodeAsync(response, cancellationToken);
         }
 
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -207,5 +168,179 @@ public class OpenAiCompatibleAiClient : IAiClient
         }
 
         return rawContent;
+    }
+
+    public async IAsyncEnumerable<string> StreamChatResponseAsync(
+        string systemPrompt,
+        IEnumerable<(string Role, string Content)> history,
+        string userPrompt,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userPrompt);
+
+        if (string.IsNullOrWhiteSpace(_settings.ApiKey))
+        {
+            throw new AiAuthenticationException(
+                "AI API key is missing. Configure it securely via .NET User Secrets: dotnet user-secrets set \"AI:ApiKey\" \"<key>\" " +
+                "or set the AI__ApiKey environment variable.");
+        }
+
+        var messageList = new List<object>
+        {
+            new { role = "system", content = systemPrompt }
+        };
+
+        foreach (var (role, content) in history)
+        {
+            messageList.Add(new { role, content });
+        }
+
+        messageList.Add(new { role = "user", content = userPrompt });
+
+        var payload = new Dictionary<string, object>
+        {
+            ["model"] = _settings.Model,
+            ["messages"] = messageList,
+            ["temperature"] = _settings.Temperature,
+            ["max_tokens"] = _settings.MaxTokens,
+            ["stream"] = true
+        };
+
+        if (!string.IsNullOrWhiteSpace(_settings.ReasoningEffort))
+        {
+            payload["reasoning_effort"] = _settings.ReasoningEffort;
+        }
+
+        var endpoint = _settings.BaseUrl.TrimEnd('/') + "/chat/completions";
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.ApiKey);
+        httpRequest.Content = new StringContent(
+            JsonSerializer.Serialize(payload),
+            Encoding.UTF8,
+            "application/json");
+
+        HttpResponseMessage? response = null;
+        var shouldFallback = false;
+        try
+        {
+            response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Streaming request connection failed; falling back to non-streaming response.");
+            shouldFallback = true;
+        }
+
+        if (shouldFallback)
+        {
+            var fallback = await GenerateChatResponseAsync(systemPrompt, history, userPrompt, cancellationToken);
+            yield return fallback;
+            yield break;
+        }
+
+        var nonNullResponse = response ?? throw new AiServiceUnavailableException("AI provider did not return a response.");
+        using (nonNullResponse)
+        {
+            if (!nonNullResponse.IsSuccessStatusCode)
+            {
+                await HandleErrorStatusCodeAsync(nonNullResponse, cancellationToken);
+            }
+
+            using var stream = await nonNullResponse.Content.ReadAsStreamAsync(cancellationToken);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var line = await reader.ReadLineAsync(cancellationToken);
+                if (line == null)
+                {
+                    break;
+                }
+
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                if (line.StartsWith("data: "))
+                {
+                    var data = line[6..].Trim();
+                    if (data == "[DONE]")
+                    {
+                        break;
+                    }
+
+                    string? deltaContent = null;
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(data);
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
+                        {
+                            var first = choices[0];
+                            if (first.TryGetProperty("delta", out var delta) &&
+                                delta.TryGetProperty("content", out var contentProp))
+                            {
+                                deltaContent = contentProp.GetString();
+                            }
+                        }
+                    }
+                    catch (JsonException)
+                    {
+                        // Ignore malformed SSE chunk line
+                    }
+
+                    if (!string.IsNullOrEmpty(deltaContent))
+                    {
+                        yield return deltaContent;
+                    }
+                }
+            }
+        }
+    }
+
+    private async Task HandleErrorStatusCodeAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            throw new AiAuthenticationException(
+                "AI provider rejected authentication. Please verify that your Gemini API key is valid and active.");
+        }
+
+        if (response.StatusCode == (HttpStatusCode)429)
+        {
+            TimeSpan? retryAfter = null;
+            if (response.Headers.RetryAfter != null)
+            {
+                if (response.Headers.RetryAfter.Delta.HasValue)
+                {
+                    retryAfter = response.Headers.RetryAfter.Delta.Value;
+                }
+                else if (response.Headers.RetryAfter.Date.HasValue)
+                {
+                    var diff = response.Headers.RetryAfter.Date.Value - DateTimeOffset.UtcNow;
+                    retryAfter = diff > TimeSpan.Zero ? diff : TimeSpan.FromSeconds(1);
+                }
+            }
+
+            throw new AiQuotaExceededException(
+                "AI rate limit or quota exceeded. Please try again shortly.", retryAfter);
+        }
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            throw new AiServiceUnavailableException(
+                $"AI model '{_settings.Model}' is not found or unavailable on the configured endpoint.");
+        }
+
+        if ((int)response.StatusCode >= 500)
+        {
+            throw new AiServiceUnavailableException(
+                $"AI provider server error (HTTP {(int)response.StatusCode}: {response.ReasonPhrase}).");
+        }
+
+        var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        throw new AiClientException(
+            $"AI provider rejected request with HTTP {(int)response.StatusCode}: {response.ReasonPhrase}. Details: {errorBody}");
     }
 }

@@ -166,3 +166,30 @@
    - Open a tab with [https://codeforces.com/](https://codeforces.com/) or another page.
    - Switch tabs back and forth: observe the platform and title chips update dynamically.
    - Click the **🔄** button: verify context refreshes instantly.
+
+---
+
+## 9. Step 8: Verify Real-Time Streaming & Upstream Cancellation (Module C5)
+
+1. **Test Incremental SSE Token Streaming:**
+   - In the side panel chat composer, ask a comprehensive question:
+     ```text
+     Provide a full breakdown of Two Sum: brute force vs hash map with code and complexities.
+     ```
+   - Press **Enter**.
+   - Observe that words appear incrementally in real-time as tokens arrive via Server-Sent Events (`POST /api/chat/stream`), accompanied by a blinking streaming cursor (`▊`).
+   - Notice the Send button transforms into an active **⏹ Stop** button during generation.
+
+2. **Test Upstream Cancellation ("Stop Generating"):**
+   - Ask another long question:
+     ```text
+     Write a detailed explanation of dynamic programming with 5 examples.
+     ```
+   - Press **Enter**.
+   - After a few sentences have streamed, click the red **⏹ Stop** button.
+   - Verify that streaming halts immediately.
+   - Verify that all previously generated text is retained in the assistant bubble.
+   - In the backend database, verify the assistant message is persisted with `[Generation stopped]` appended, confirming server-side persistence upon upstream client abort.
+
+3. **Test Non-Streaming Fallback:**
+   - If SSE connection drops or is blocked, verify the client automatically falls back to standard `POST /api/chat/messages` and displays the full response cleanly.

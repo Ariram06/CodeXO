@@ -4,8 +4,10 @@ import { Observable, tap } from 'rxjs';
 import {
   AuthResponse,
   ChatMessageResponse,
+  ChatStreamChunk,
   MessageFeedbackResponse,
   SendMessageRequest,
+  StreamResult,
   SubmitFeedbackRequest,
   UserPreferenceDto,
 } from '../models/api-contracts';
@@ -128,6 +130,162 @@ export class ApiClientService {
       request,
       { headers: this.getAuthHeaders() }
     );
+  }
+
+  async streamMessage(
+    request: SendMessageRequest,
+    onChunk: (delta: string) => void,
+    abortSignal?: AbortSignal
+  ): Promise<StreamResult> {
+    const currentToken = this.token();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (currentToken) {
+      headers['Authorization'] = `Bearer ${currentToken}`;
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}/api/chat/stream`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(request),
+        signal: abortSignal,
+      });
+    } catch (fetchErr: any) {
+      if (abortSignal?.aborted) {
+        throw fetchErr;
+      }
+      return this.fallbackToNonStreaming(request, onChunk);
+    }
+
+    if (!response.ok) {
+      let errorBody: any;
+      try {
+        errorBody = await response.json();
+      } catch {
+        errorBody = null;
+      }
+
+      const message =
+        errorBody?.message ||
+        (Array.isArray(errorBody?.errors) ? errorBody.errors.join(', ') : null) ||
+        `HTTP ${response.status}: ${response.statusText}`;
+
+      const err: any = new Error(message);
+      err.status = response.status;
+      err.error = errorBody;
+      throw err;
+    }
+
+    if (!response.body) {
+      return this.fallbackToNonStreaming(request, onChunk);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let accumulatedContent = '';
+    let conversationId = request.conversationId || '';
+    let messageId = '';
+    let model: string | undefined;
+
+    const abortHandler = () => {
+      try {
+        reader.cancel();
+      } catch {}
+    };
+    if (abortSignal) {
+      abortSignal.addEventListener('abort', abortHandler);
+    }
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+          const data = trimmed.slice(6).trim();
+          if (data === '[DONE]') {
+            return {
+              conversationId,
+              messageId,
+              fullContent: accumulatedContent,
+              model,
+            };
+          }
+
+          try {
+            const chunk: ChatStreamChunk = JSON.parse(data);
+            if (chunk.error) {
+              throw new Error(chunk.error);
+            }
+
+            if (chunk.conversationId) conversationId = chunk.conversationId;
+            if (chunk.messageId) messageId = chunk.messageId;
+            if (chunk.model) model = chunk.model;
+
+            if (chunk.delta) {
+              accumulatedContent += chunk.delta;
+              onChunk(chunk.delta);
+            }
+          } catch (jsonErr) {
+            if (jsonErr instanceof Error && jsonErr.message && !jsonErr.message.includes('JSON')) {
+              throw jsonErr;
+            }
+          }
+        }
+      }
+    } catch (readErr: any) {
+      if (abortSignal?.aborted || accumulatedContent.length > 0) {
+        return {
+          conversationId,
+          messageId,
+          fullContent: accumulatedContent,
+          model,
+        };
+      }
+      throw readErr;
+    } finally {
+      if (abortSignal) {
+        abortSignal.removeEventListener('abort', abortHandler);
+      }
+    }
+
+    return {
+      conversationId,
+      messageId,
+      fullContent: accumulatedContent,
+      model,
+    };
+  }
+
+  private async fallbackToNonStreaming(
+    request: SendMessageRequest,
+    onChunk: (delta: string) => void
+  ): Promise<StreamResult> {
+    const res = await new Promise<ChatMessageResponse>((resolve, reject) => {
+      this.sendMessage(request).subscribe({
+        next: resolve,
+        error: reject,
+      });
+    });
+
+    onChunk(res.content);
+    return {
+      conversationId: res.conversationId,
+      messageId: res.messageId,
+      fullContent: res.content,
+      model: res.model,
+    };
   }
 
   // --- Feedback ---

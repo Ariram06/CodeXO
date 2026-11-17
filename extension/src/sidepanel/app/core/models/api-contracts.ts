@@ -61,4 +61,21 @@ export interface ChatMessageItem {
   content: string;
   timestamp: Date;
   model?: string;
+  isStreaming?: boolean;
+}
+
+export interface ChatStreamChunk {
+  conversationId: string;
+  messageId: string;
+  delta?: string | null;
+  isDone: boolean;
+  model?: string | null;
+  error?: string | null;
+}
+
+export interface StreamResult {
+  conversationId: string;
+  messageId: string;
+  fullContent: string;
+  model?: string;
 }

@@ -68,6 +68,16 @@ describe('App Component', () => {
           outputTokens: 120,
         } as ChatMessageResponse)
       ),
+      streamMessage: vi.fn(async (request, onChunk, _signal) => {
+        onChunk('Here is the O(n) hash map solution');
+        onChunk(' for Two Sum in Python.');
+        return {
+          conversationId: 'conv-123',
+          messageId: 'msg-asst-1',
+          fullContent: 'Here is the O(n) hash map solution for Two Sum in Python.',
+          model: 'gemini-3.5-flash-lite',
+        };
+      }),
       updatePreferences: vi.fn(),
       clearToken: vi.fn(),
     };
@@ -114,7 +124,7 @@ describe('App Component', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(mockApiClientService.sendMessage).toHaveBeenCalled();
+    expect(mockApiClientService.streamMessage).toHaveBeenCalled();
 
     expect(app.messages().length).toBe(2);
     expect(app.messages()[0].role).toBe('user');
@@ -138,17 +148,15 @@ describe('App Component', () => {
     } as unknown as KeyboardEvent);
 
     expect(preventDefaultSpy).not.toHaveBeenCalled();
-    expect(mockApiClientService.sendMessage).not.toHaveBeenCalled();
+    expect(mockApiClientService.streamMessage).not.toHaveBeenCalled();
     expect(app.messages().length).toBe(0);
   });
 
   it('should display specific error banner with Retry button when chat API returns 429', async () => {
-    mockApiClientService.sendMessage = vi.fn(() =>
-      throwError(() => ({
-        status: 429,
-        error: { message: 'Rate limit exceeded.', retryAfterSeconds: 45 },
-      }))
-    );
+    mockApiClientService.streamMessage = vi.fn().mockRejectedValue({
+      status: 429,
+      error: { message: 'Rate limit exceeded.', retryAfterSeconds: 45 },
+    });
 
     app.inputMessage.set('Trigger rate limit');
     await app.onSendMessage();
@@ -165,20 +173,14 @@ describe('App Component', () => {
   });
 
   it('should resend last message when Retry button is clicked', async () => {
-    mockApiClientService.sendMessage = vi.fn()
-      .mockImplementationOnce(() => throwError(() => ({ status: 503, error: { message: 'Service unavailable' } })))
-      .mockImplementationOnce(() =>
-        of({
-          conversationId: 'conv-retry-1',
-          messageId: 'msg-2',
-          role: 'assistant',
-          content: 'Recovered answer on retry.',
-          createdAtUtc: new Date().toISOString(),
-          model: 'gemini-3.5-flash-lite',
-          inputTokens: 10,
-          outputTokens: 20,
-        })
-      );
+    mockApiClientService.streamMessage = vi.fn()
+      .mockRejectedValueOnce({ status: 503, error: { message: 'Service unavailable' } })
+      .mockResolvedValueOnce({
+        conversationId: 'conv-retry-1',
+        messageId: 'msg-2',
+        fullContent: 'Recovered answer on retry.',
+        model: 'gemini-3.5-flash-lite',
+      });
 
     app.inputMessage.set('Explain hash map');
     await app.onSendMessage();
@@ -191,12 +193,79 @@ describe('App Component', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(mockApiClientService.sendMessage).toHaveBeenCalledTimes(2);
+    expect(mockApiClientService.streamMessage).toHaveBeenCalledTimes(2);
     expect(app.chatError()).toBeNull();
     expect(app.messages().some((m) => m.content.includes('Recovered answer on retry'))).toBe(true);
   });
 
-  it('should render context bar chips and respect includeCode toggle in sendMessage', async () => {
+  it('should incrementally render streamed chunks in the UI', async () => {
+    let capturedOnChunk: (d: string) => void = () => {};
+    mockApiClientService.streamMessage = vi.fn(async (_req, onChunk) => {
+      capturedOnChunk = onChunk;
+      // Simulate chunk 1
+      capturedOnChunk('Chunk 1 ');
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          capturedOnChunk('Chunk 2');
+          resolve({
+            conversationId: 'conv-chunks',
+            messageId: 'msg-chunks',
+            fullContent: 'Chunk 1 Chunk 2',
+            model: 'gemini-3.5-flash',
+          });
+        }, 10);
+      });
+    });
+
+    app.inputMessage.set('Stream me');
+    const sendPromise = app.onSendMessage();
+
+    // Allow async context refresh to complete and trigger first chunk
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+
+    // After chunk 1
+    expect(app.messages().length).toBe(2);
+    expect(app.messages()[1].content).toBe('Chunk 1 ');
+    expect(app.messages()[1].isStreaming).toBe(true);
+
+    await sendPromise;
+    expect(app.messages()[1].content).toBe('Chunk 1 Chunk 2');
+    expect(app.messages()[1].isStreaming).toBe(false);
+  });
+
+  it('should stop generating and retain partial text when onStopGenerating is invoked', async () => {
+    mockApiClientService.streamMessage = vi.fn(async (_req, onChunk, signal: AbortSignal) => {
+      onChunk('Partial solution start...');
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          const abortError = new Error('The operation was aborted');
+          abortError.name = 'AbortError';
+          reject(abortError);
+        });
+      });
+    });
+
+    app.inputMessage.set('Give me a long answer');
+    const sendPromise = app.onSendMessage();
+
+    // Allow stream to start and yield partial text
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fixture.detectChanges();
+
+    expect(app.isLoading()).toBe(true);
+    expect(app.messages()[1].content).toBe('Partial solution start...');
+
+    // User clicks Stop
+    app.onStopGenerating();
+
+    await sendPromise;
+    expect(app.isLoading()).toBe(false);
+    expect(app.messages()[1].content).toBe('Partial solution start...');
+    expect(app.messages()[1].isStreaming).toBe(false);
+  });
+
+  it('should render context bar chips and respect includeCode toggle in streamMessage', async () => {
     // Set active tab context with code
     app.bridge.activeTabContext.set({
       platform: 'LeetCode',
@@ -217,12 +286,14 @@ describe('App Component', () => {
     // 1. Send with includeCode = true (default)
     app.inputMessage.set('Check this');
     await app.onSendMessage();
-    expect(mockApiClientService.sendMessage).toHaveBeenCalledWith(
+    expect(mockApiClientService.streamMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         context: expect.objectContaining({
           code: 'class Solution: pass',
         }),
-      })
+      }),
+      expect.any(Function),
+      expect.anything()
     );
 
     // 2. Toggle includeCode = false
@@ -232,12 +303,14 @@ describe('App Component', () => {
 
     app.inputMessage.set('Check this without code');
     await app.onSendMessage();
-    expect(mockApiClientService.sendMessage).toHaveBeenCalledWith(
+    expect(mockApiClientService.streamMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         context: expect.objectContaining({
           code: undefined,
         }),
-      })
+      }),
+      expect.any(Function),
+      expect.anything()
     );
   });
 });

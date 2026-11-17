@@ -126,22 +126,20 @@
                     }
                     <span class="message-time">{{ msg.timestamp | date:'shortTime' }}</span>
                   </div>
-                  <div class="message-content">{{ msg.content }}</div>
-                </div>
-              </div>
-            }
-
-            @if (isLoading()) {
-              <div class="message-row assistant loading">
-                <div class="message-bubble">
-                  <div class="message-header">
-                    <span class="sender-name">Codexo</span>
-                  </div>
-                  <div class="typing-indicator">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </div>
+                  @if (msg.role === 'assistant' && msg.isStreaming && !msg.content) {
+                    <div class="typing-indicator">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  } @else {
+                    <div class="message-content">
+                      {{ msg.content }}
+                      @if (msg.isStreaming) {
+                        <span class="streaming-cursor">▊</span>
+                      }
+                    </div>
+                  }
                 </div>
               </div>
             }
@@ -179,19 +177,27 @@
           (keydown)="onKeyDown($event)"
           [disabled]="isLoading()"
         ></textarea>
-        <button
-          type="button"
-          class="send-btn"
-          (click)="onSendMessage()"
-          [disabled]="isLoading() || !inputMessage().trim()"
-          title="Send message (Enter)"
-        >
-          @if (isLoading()) {
-            <span class="send-spinner">⏳</span>
-          } @else {
+        @if (isLoading()) {
+          <button
+            type="button"
+            class="stop-btn"
+            (click)="onStopGenerating()"
+            title="Stop generating response"
+          >
+            <span class="stop-icon">⏹</span>
+            <span>Stop</span>
+          </button>
+        } @else {
+          <button
+            type="button"
+            class="send-btn"
+            (click)="onSendMessage()"
+            [disabled]="!inputMessage().trim()"
+            title="Send message (Enter)"
+          >
             <span>Send</span>
-          }
-        </button>
+          </button>
+        }
       </div>
     }
   </main>

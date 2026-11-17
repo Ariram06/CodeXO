@@ -489,4 +489,46 @@
       cursor: not-allowed;
     }
   }
+
+  .stop-btn {
+    background: #dc2626;
+    color: #fff;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: center;
+    transition: background 0.2s;
+
+    &:hover {
+      background: #ef4444;
+    }
+
+    .stop-icon {
+      font-size: 11px;
+    }
+  }
+}
+
+.streaming-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  color: #3b82f6;
+  font-weight: bold;
+  animation: cursor-blink 1s step-start infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }

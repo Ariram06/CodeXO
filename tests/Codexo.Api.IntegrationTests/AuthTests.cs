@@ -21,6 +21,18 @@ public class AuthTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task Options_Login_ReturnsOkOrNoContent()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Options, "/api/auth/login");
+        request.Headers.Add("Origin", "chrome-extension://abcdefghijklmnop");
+        request.Headers.Add("Access-Control-Request-Method", "POST");
+        request.Headers.Add("Access-Control-Request-Headers", "content-type");
+
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Register_ValidRequest_Returns200WithJwtToken()
     {
         var uniqueEmail = $"testuser_{Guid.NewGuid():N}@codexo.dev";

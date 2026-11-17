@@ -1,5 +1,7 @@
 namespace Codexo.Infrastructure.Services;
 
+using System.Runtime.CompilerServices;
+using System.Text;
 using Codexo.Core.AI;
 using Codexo.Core.Dtos.Chat;
 using Codexo.Core.Entities;
@@ -146,6 +148,145 @@ public class ChatService : IChatService
             Content: assistantContent,
             Metadata: assistantMetadata,
             CreatedAtUtc: assistantMessage.CreatedAtUtc);
+    }
+
+    public async IAsyncEnumerable<ChatStreamChunk> StreamMessageAsync(
+        string userId,
+        SendMessageRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Message);
+
+        var sanitizedMessage = request.Message.Trim();
+        if (sanitizedMessage.Length > MaxMessageLength)
+        {
+            sanitizedMessage = sanitizedMessage[..MaxMessageLength];
+        }
+
+        var sanitizedContext = SanitizeAndCapContext(request.Context);
+
+        Conversation conversation;
+        if (request.ConversationId.HasValue)
+        {
+            var existing = await _dbContext.Conversations
+                .Include(c => c.Messages)
+                .FirstOrDefaultAsync(c => c.Id == request.ConversationId.Value && c.UserId == userId, cancellationToken);
+
+            if (existing == null)
+            {
+                throw new KeyNotFoundException($"Conversation '{request.ConversationId.Value}' was not found.");
+            }
+
+            conversation = existing;
+        }
+        else
+        {
+            var title = !string.IsNullOrWhiteSpace(sanitizedContext?.Title)
+                ? sanitizedContext.Title.Trim()
+                : (sanitizedMessage.Length > 50 ? sanitizedMessage[..47] + "..." : sanitizedMessage);
+
+            conversation = new Conversation
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                Title = title,
+                CreatedAtUtc = DateTimeOffset.UtcNow,
+                UpdatedAtUtc = DateTimeOffset.UtcNow
+            };
+
+            _dbContext.Conversations.Add(conversation);
+        }
+
+        var userMessage = new Message
+        {
+            Id = Guid.NewGuid(),
+            ConversationId = conversation.Id,
+            Role = MessageRole.User,
+            Content = sanitizedMessage,
+            Metadata = ExtractMetadata(sanitizedContext),
+            CreatedAtUtc = DateTimeOffset.UtcNow
+        };
+
+        _dbContext.Messages.Add(userMessage);
+        conversation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var systemPrompt = _promptBuilder.BuildSystemPrompt();
+        var history = _promptBuilder.FormatHistory(conversation.Messages);
+        var userPrompt = _promptBuilder.BuildUserPrompt(sanitizedMessage, sanitizedContext);
+
+        var assistantMessageId = Guid.NewGuid();
+        var accumulated = new StringBuilder();
+        var isCompleted = false;
+
+        try
+        {
+            await using var enumerator = _aiClient.StreamChatResponseAsync(systemPrompt, history, userPrompt, cancellationToken)
+                .GetAsyncEnumerator(cancellationToken);
+
+            while (true)
+            {
+                if (!await enumerator.MoveNextAsync())
+                {
+                    break;
+                }
+
+                var delta = enumerator.Current;
+                accumulated.Append(delta);
+                yield return new ChatStreamChunk(
+                    conversation.Id,
+                    assistantMessageId,
+                    delta,
+                    false,
+                    _aiSettings.Model);
+            }
+
+            isCompleted = true;
+            yield return new ChatStreamChunk(
+                conversation.Id,
+                assistantMessageId,
+                null,
+                true,
+                _aiSettings.Model);
+        }
+        finally
+        {
+            var finalContent = accumulated.ToString();
+            if (!isCompleted && finalContent.Length > 0)
+            {
+                finalContent += " [Generation stopped]";
+            }
+
+            if (finalContent.Length > 0)
+            {
+                try
+                {
+                    var assistantMessage = new Message
+                    {
+                        Id = assistantMessageId,
+                        ConversationId = conversation.Id,
+                        Role = MessageRole.Assistant,
+                        Content = finalContent,
+                        Model = _aiSettings.Model,
+                        Metadata = ExtractMetadata(sanitizedContext),
+                        CreatedAtUtc = DateTimeOffset.UtcNow
+                    };
+
+                    _dbContext.Messages.Add(assistantMessage);
+                    conversation.UpdatedAtUtc = DateTimeOffset.UtcNow;
+
+                    // Safely commit partial or completed response using uncancelled token
+                    await _dbContext.SaveChangesAsync(CancellationToken.None);
+                    _logger.LogInformation("Successfully saved assistant message {MessageId} (completed: {IsCompleted})", assistantMessageId, isCompleted);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to save assistant message {MessageId} in finally block", assistantMessageId);
+                }
+            }
+        }
     }
 
     private static PageContext? SanitizeAndCapContext(PageContext? context)
