@@ -1,62 +1,32 @@
 // Codexo Sidepanel API Contracts (Aligned with Codexo.Core / Codexo.Api DTOs)
 
-export interface ProblemContextPayload {
-  platform: number;
-  platformProblemId: string;
-  title: string;
-  slug: string;
+export interface PageContext {
+  platform: string;
   url: string;
-  difficulty: string;
-  description: string;
-}
-
-export interface ProblemSessionResponse {
-  sessionId: string;
-  problemId: string;
   title: string;
-  platform: number;
-  platformProblemId: string;
-  currentLevel: number;
-  status: string;
-  createdAt: string;
-  lastActivityAt: string;
+  problemText?: string;
+  language?: string;
+  code?: string;
+  selection?: string;
+  errorText?: string;
+  isTruncated?: boolean;
 }
 
-export interface HintResponseDto {
-  hintId: string;
-  level: number;
-  levelName: string;
+export interface SendMessageRequest {
+  conversationId?: string;
+  message: string;
+  context?: PageContext;
+}
+
+export interface ChatMessageResponse {
+  conversationId: string;
+  messageId: string;
+  role: string;
   content: string;
-  observations?: string[];
-  guidingQuestions?: string[];
-  keyTakeaway?: string;
-  createdAt: string;
-  feedback?: {
-    isHelpful: boolean;
-    comment?: string;
-  };
-}
-
-export interface HintStatusDto {
-  currentLevel: number;
-  currentLevelName: string;
-  unlockedLevels: number[];
-  totalHintsUnlocked: number;
-  requiresAttemptForNextLevel: boolean;
-  sessionStatus: string;
-}
-
-export interface SubmitAttemptRequest {
-  attemptContent: string;
-  codeSnippet?: string;
-}
-
-export interface SubmitAttemptResponse {
-  attemptId: string;
-  isApproved: boolean;
-  feedbackMessage: string;
-  nextLevelUnlocked: boolean;
-  nextLevel: number;
+  createdAtUtc: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 export interface SubmitFeedbackRequest {
@@ -64,12 +34,12 @@ export interface SubmitFeedbackRequest {
   comment?: string;
 }
 
-export interface HintFeedbackResponse {
+export interface MessageFeedbackResponse {
   feedbackId: string;
-  hintId: string;
+  messageId: string;
   isHelpful: boolean;
   comment?: string;
-  createdAt: string;
+  createdAtUtc: string;
 }
 
 export interface UserPreferenceDto {
@@ -82,4 +52,12 @@ export interface AuthResponse {
   token: string;
   expiresAt: string;
   email: string;
+}
+
+export interface ChatMessageItem {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+  model?: string;
 }

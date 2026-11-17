@@ -3,13 +3,9 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable, tap } from 'rxjs';
 import {
   AuthResponse,
-  HintFeedbackResponse,
-  HintResponseDto,
-  HintStatusDto,
-  ProblemContextPayload,
-  ProblemSessionResponse,
-  SubmitAttemptRequest,
-  SubmitAttemptResponse,
+  ChatMessageResponse,
+  MessageFeedbackResponse,
+  SendMessageRequest,
   SubmitFeedbackRequest,
   UserPreferenceDto,
 } from '../models/api-contracts';
@@ -125,66 +121,22 @@ export class ApiClientService {
       );
   }
 
-  // --- Sessions & Intake ---
-  getOrCreateSession(problem: ProblemContextPayload): Observable<ProblemSessionResponse> {
-    return this.http.post<ProblemSessionResponse>(
-      `${this.baseUrl}/api/sessions/context`,
-      {
-        platform: problem.platform,
-        platformProblemId: problem.platformProblemId,
-        title: problem.title,
-        slug: problem.slug || problem.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'problem',
-        url: problem.url,
-        difficulty: problem.difficulty,
-        description: problem.description,
-      },
-      { headers: this.getAuthHeaders() }
-    );
-  }
-
-  // --- Hints ---
-  getSessionHints(sessionId: string): Observable<HintResponseDto[]> {
-    return this.http.get<HintResponseDto[]>(
-      `${this.baseUrl}/api/sessions/${sessionId}/hints`,
-      { headers: this.getAuthHeaders() }
-    );
-  }
-
-  getHintStatus(sessionId: string): Observable<HintStatusDto> {
-    return this.http.get<HintStatusDto>(
-      `${this.baseUrl}/api/sessions/${sessionId}/hints/status`,
-      { headers: this.getAuthHeaders() }
-    );
-  }
-
-  requestNextHint(sessionId: string): Observable<HintResponseDto> {
-    return this.http.post<HintResponseDto>(
-      `${this.baseUrl}/api/sessions/${sessionId}/hints`,
-      {},
-      { headers: this.getAuthHeaders() }
-    );
-  }
-
-  submitAttempt(
-    sessionId: string,
-    request: SubmitAttemptRequest
-  ): Observable<SubmitAttemptResponse> {
-    return this.http.post<SubmitAttemptResponse>(
-      `${this.baseUrl}/api/sessions/${sessionId}/attempts`,
-      {
-        attemptText: request.attemptContent || (request as any).attemptText || '',
-      },
+  // --- Chat Endpoints ---
+  sendMessage(request: SendMessageRequest): Observable<ChatMessageResponse> {
+    return this.http.post<ChatMessageResponse>(
+      `${this.baseUrl}/api/chat/messages`,
+      request,
       { headers: this.getAuthHeaders() }
     );
   }
 
   // --- Feedback ---
   submitFeedback(
-    hintId: string,
+    messageId: string,
     request: SubmitFeedbackRequest
-  ): Observable<HintFeedbackResponse> {
-    return this.http.post<HintFeedbackResponse>(
-      `${this.baseUrl}/api/hints/${hintId}/feedback`,
+  ): Observable<MessageFeedbackResponse> {
+    return this.http.post<MessageFeedbackResponse>(
+      `${this.baseUrl}/api/messages/${messageId}/feedback`,
       request,
       { headers: this.getAuthHeaders() }
     );

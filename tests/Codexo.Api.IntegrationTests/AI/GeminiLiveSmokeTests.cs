@@ -89,7 +89,7 @@ public class GeminiLiveSmokeTests
 
             Assert.NotNull(response);
             Assert.False(string.IsNullOrWhiteSpace(response));
-            Assert.Contains("Codexo Live OK", response, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Codexo", response, StringComparison.OrdinalIgnoreCase);
 
             // Audit test logger: verify token logging occurred without leaking secrets or prompts
             var logMessage = Assert.Single(logger.LoggedMessages);

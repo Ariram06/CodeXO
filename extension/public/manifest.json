@@ -1,11 +1,25 @@
 {
   "manifest_version": 3,
   "name": "Codexo",
-  "version": "0.1.0",
-  "description": "Progressive DSA hints — learn to solve the next problem yourself.",
+  "version": "0.2.0",
+  "description": "AI coding assistant in your browser side panel.",
   "permissions": [
     "sidePanel",
-    "activeTab"
+    "activeTab",
+    "tabs",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://leetcode.com/*",
+    "https://codeforces.com/*",
+    "https://*.hackerrank.com/*",
+    "https://*.geeksforgeeks.org/*",
+    "https://www.codechef.com/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
   ],
   "side_panel": {
     "default_path": "sidepanel/browser/index.html"
@@ -16,7 +30,13 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://leetcode.com/problems/*"],
+      "matches": [
+        "https://leetcode.com/*",
+        "https://codeforces.com/*",
+        "https://*.hackerrank.com/*",
+        "https://*.geeksforgeeks.org/*",
+        "https://www.codechef.com/*"
+      ],
       "js": ["content/content-script.js"],
       "run_at": "document_idle"
     }

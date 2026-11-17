@@ -3,16 +3,16 @@ import {
   MessageType,
   ExtensionMessage,
   ExtensionResponse,
-  ProblemContextPayload,
 } from '../../../../shared/extension-messaging';
+import { PageContext } from '../models/api-contracts';
 
 @Injectable({
   providedIn: 'root',
 })
 export class ExtensionBridgeService {
   readonly isBridgeConnected = signal<boolean>(false);
-  readonly activeProblem = signal<ProblemContextPayload | null>(null);
   readonly lastPingResponse = signal<string | null>(null);
+  readonly activeTabContext = signal<PageContext | null>(null);
 
   constructor() {
     this.initializeBridge();
@@ -38,29 +38,41 @@ export class ExtensionBridgeService {
       }
     );
 
-    // 2. Fetch current active problem cached by the service worker
-    chrome.runtime.sendMessage(
-      { type: MessageType.GetActiveProblem },
-      (response: ExtensionResponse<ProblemContextPayload | null>) => {
-        if (!chrome.runtime.lastError && response?.success && response.data) {
-          this.activeProblem.set(response.data);
-          console.log('[ExtensionBridge] Loaded active problem from SW:', response.data.title);
-        }
-      }
-    );
+    // 2. Fetch initial active tab context
+    this.refreshActiveTabContext();
+  }
 
-    // 3. Listen for broadcast problem updates from content script / service worker
-    chrome.runtime.onMessage.addListener((message: ExtensionMessage) => {
-      if (
-        message.type === MessageType.ProblemDetected ||
-        message.type === MessageType.ProblemUpdated
-      ) {
-        const payload = message.payload as ProblemContextPayload;
-        if (payload) {
-          this.activeProblem.set(payload);
-          console.log('[ExtensionBridge] Received problem broadcast:', payload.title);
-        }
-      }
+  async refreshActiveTabContext(): Promise<PageContext> {
+    if (typeof chrome === 'undefined' || !chrome.tabs?.query) {
+      const mockContext: PageContext = {
+        platform: 'Web',
+        url: 'https://leetcode.com/problems/two-sum/',
+        title: 'Two Sum - LeetCode',
+      };
+      this.activeTabContext.set(mockContext);
+      return mockContext;
+    }
+
+    return new Promise((resolve) => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const activeTab = tabs?.[0];
+        const url = activeTab?.url || '';
+        const title = activeTab?.title || '';
+        let platform = 'Web';
+        if (url.includes('leetcode.com')) platform = 'LeetCode';
+        else if (url.includes('codeforces.com')) platform = 'Codeforces';
+        else if (url.includes('hackerrank.com')) platform = 'HackerRank';
+        else if (url.includes('geeksforgeeks.org')) platform = 'GeeksforGeeks';
+        else if (url.includes('codechef.com')) platform = 'CodeChef';
+
+        const context: PageContext = {
+          platform,
+          url,
+          title,
+        };
+        this.activeTabContext.set(context);
+        resolve(context);
+      });
     });
   }
 

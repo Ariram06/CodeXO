@@ -1,15 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { App } from './app';
 import { ExtensionBridgeService } from './core/services/extension-bridge.service';
 import { ApiClientService } from './core/services/api-client.service';
-import { extractProblemFromDocument } from '../../content/leetcode-extractor';
-import { MessageType, ProblemContextPayload } from '../../shared/extension-messaging';
+import { ChatMessageResponse, SendMessageRequest } from './core/models/api-contracts';
 
-describe('End-to-End Integration Flow (DOM Scrape -> Messaging -> Sidepanel -> API)', () => {
+describe('End-to-End Chat Integration Flow (Tab Context -> Bridge -> Sidepanel -> API)', () => {
   let fixture: ComponentFixture<App>;
   let app: App;
   let mockApiClient: any;
@@ -17,12 +14,17 @@ describe('End-to-End Integration Flow (DOM Scrape -> Messaging -> Sidepanel -> A
   beforeEach(async () => {
     (globalThis as any).chrome = {
       runtime: {
-        sendMessage: vi.fn((_msg, cb) => cb?.({ success: true })),
+        sendMessage: vi.fn((_msg, cb) => cb?.({ success: true, data: 'PONG' })),
         onMessage: { addListener: vi.fn() },
+      },
+      tabs: {
+        query: vi.fn((_q, cb) =>
+          cb?.([{ id: 101, url: 'https://leetcode.com/problems/two-sum/', title: 'Two Sum - LeetCode' }])
+        ),
       },
       storage: {
         local: {
-          get: vi.fn((_keys, cb) => cb?.({ codexo_token: 'valid-jwt-token', codexo_email: 'learner@codexo.dev' })),
+          get: vi.fn((_keys, cb) => cb?.({ codexo_token: 'valid-jwt-token', codexo_email: 'dev@codexo.dev' })),
           set: vi.fn(),
           remove: vi.fn(),
         },
@@ -31,54 +33,20 @@ describe('End-to-End Integration Flow (DOM Scrape -> Messaging -> Sidepanel -> A
 
     mockApiClient = {
       token: vi.fn(() => 'valid-jwt-token'),
-      currentUser: vi.fn(() => 'learner@codexo.dev'),
-      getOrCreateSession: vi.fn((problem: ProblemContextPayload) =>
+      currentUser: vi.fn(() => 'dev@codexo.dev'),
+      getPreferences: vi.fn(() => of({ preferredLanguage: 'Python', autoUnlockL1: false, updatedAt: '' })),
+      sendMessage: vi.fn((req: SendMessageRequest) =>
         of({
-          sessionId: 'session-e2e-1',
-          problemId: 'prob-1',
-          title: problem.title,
-          platform: problem.platform,
-          platformProblemId: problem.platformProblemId,
-          currentLevel: 1,
-          status: 'Active',
-          createdAt: new Date().toISOString(),
-          lastActivityAt: new Date().toISOString(),
-        })
+          conversationId: 'conv-e2e-1',
+          messageId: 'msg-asst-101',
+          role: 'assistant',
+          content: 'The optimal Two Sum solution uses a hash map to achieve O(n) time and O(n) space complexity.',
+          createdAtUtc: new Date().toISOString(),
+          model: 'gemini-3.5-flash-lite',
+          inputTokens: 42,
+          outputTokens: 88,
+        } as ChatMessageResponse)
       ),
-      getSessionHints: vi.fn(() => of([])),
-      getHintStatus: vi.fn(() =>
-        of({
-          currentLevel: 1,
-          currentLevelName: 'L1_Understand',
-          unlockedLevels: [1],
-          totalHintsUnlocked: 1,
-          requiresAttemptForNextLevel: false,
-          sessionStatus: 'Active',
-        })
-      ),
-      requestNextHint: vi.fn(() =>
-        of({
-          hintId: 'hint-l1',
-          level: 1,
-          levelName: 'L1_Understand',
-          content: 'Restated: find two indices summing to target.',
-          observations: ['Array is unsorted', 'Only one valid answer exists'],
-          guidingQuestions: ['Can we do better than O(n^2)?'],
-          keyTakeaway: 'Look for complement in O(1).',
-          createdAt: new Date().toISOString(),
-        })
-      ),
-      submitAttempt: vi.fn(() =>
-        of({
-          attemptId: 'att-1',
-          isApproved: true,
-          feedbackMessage: 'Great approach!',
-          nextLevelUnlocked: true,
-          nextLevel: 2,
-        })
-      ),
-      submitFeedback: vi.fn(() => of({ feedbackId: 'fb-1', isHelpful: true })),
-      getPreferences: vi.fn(() => of({ preferredLanguage: 'C#', autoUnlockL1: true, updatedAt: '' })),
       updatePreferences: vi.fn(),
       clearToken: vi.fn(),
     };
@@ -93,87 +61,86 @@ describe('End-to-End Integration Flow (DOM Scrape -> Messaging -> Sidepanel -> A
 
     fixture = TestBed.createComponent(App);
     app = fixture.componentInstance;
+    fixture.detectChanges();
   });
 
-  it('should successfully execute the full pipeline: DOM fixture scrape -> bridge sync -> session intake -> hint unlock', async () => {
-    // 1. Scrape problem from recorded LeetCode Two Sum DOM fixture
-    const fixturePath = path.resolve(__dirname, '../../content/fixtures/two-sum.html');
-    const fixtureHtml = fs.readFileSync(fixturePath, 'utf-8');
-    const doc = new DOMParser().parseFromString(fixtureHtml, 'text/html');
-    const url = 'https://leetcode.com/problems/two-sum/description/';
+  it('should execute full chat flow: active tab context -> composer -> API call -> assistant response rendering', async () => {
+    // 1. Verify active tab context was loaded from bridge
+    await app.bridge.refreshActiveTabContext();
+    expect(app.bridge.activeTabContext()?.platform).toBe('LeetCode');
+    expect(app.bridge.activeTabContext()?.title).toBe('Two Sum - LeetCode');
 
-    const extracted = extractProblemFromDocument(doc, url);
-    expect(extracted).not.toBeNull();
-    expect(extracted?.title).toBe('Two Sum');
-    expect(extracted?.difficulty).toBe('Easy');
-
-    // 2. Simulate message bridge broadcasting problem to sidepanel
-    app.bridge.activeProblem.set(extracted);
+    // 2. User enters query and sends
+    app.inputMessage.set('What is the time complexity of the optimal Two Sum solution?');
+    await app.onSendMessage();
+    await fixture.whenStable();
     fixture.detectChanges();
 
-    // 3. Verify sidepanel invoked session intake
-    expect(mockApiClient.getOrCreateSession).toHaveBeenCalledWith(extracted);
-    expect(app.activeSession()?.title).toBe('Two Sum');
-
-    // 4. Request initial hint (L1)
-    app.onRequestNextHint();
-    fixture.detectChanges();
-
-    expect(mockApiClient.requestNextHint).toHaveBeenCalledWith('session-e2e-1');
-    expect(app.sessionHints().length).toBe(1);
-    expect(app.sessionHints()[0].content).toContain('Restated: find two indices summing to target.');
-
-    // 5. Verify UI renders the unlocked hint and problem banner
-    const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('.problem-title')?.textContent).toContain('Two Sum');
-    expect(compiled.querySelector('.hint-text')?.textContent).toContain('Restated: find two indices');
-  });
-
-  it('should handle network failure gracefully with an error banner', () => {
-    mockApiClient.getOrCreateSession.mockReturnValue(
-      throwError(() => ({ error: { detail: 'Network connection refused. Is Codexo API running?' } }))
+    // 3. Verify API client received message and active page context
+    expect(mockApiClient.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'What is the time complexity of the optimal Two Sum solution?',
+        context: expect.objectContaining({
+          platform: 'LeetCode',
+          url: 'https://leetcode.com/problems/two-sum/',
+          title: 'Two Sum - LeetCode',
+        }),
+      })
     );
 
-    const mockProblem: ProblemContextPayload = {
-      platform: 1,
-      platformProblemId: '1',
-      title: 'Two Sum',
-      slug: 'two-sum',
-      url: 'https://leetcode.com/problems/two-sum/',
-      difficulty: 'Easy',
-      description: '...',
-    };
-
-    app.initializeSessionForProblem(mockProblem);
-    fixture.detectChanges();
-
-    expect(app.globalError()).toContain('Network connection refused');
+    // 4. Verify messages rendered in the DOM
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('.error-banner')?.textContent).toContain('Network connection refused');
+    const bubbles = compiled.querySelectorAll('.message-bubble');
+    expect(bubbles.length).toBe(2);
+
+    // User bubble
+    expect(bubbles[0].textContent).toContain('What is the time complexity');
+
+    // Assistant bubble
+    expect(bubbles[1].textContent).toContain('O(n) time and O(n) space complexity');
+    expect(bubbles[1].textContent).toContain('gemini-3.5-flash-lite');
   });
 
-  it('should display rate limit warning when receiving HTTP 429 Too Many Requests', () => {
-    app.activeSession.set({
-      sessionId: 'sess-rate-limit',
-      problemId: 'prob-1',
-      title: 'Two Sum',
-      platform: 1,
-      platformProblemId: '1',
-      currentLevel: 1,
-      status: 'Active',
-      createdAt: '',
-      lastActivityAt: '',
-    });
+  it('should handle API rate limit 429 with specific error banner and retry capability', async () => {
+    mockApiClient.sendMessage = vi.fn()
+      .mockImplementationOnce(() =>
+        throwError(() => ({
+          status: 429,
+          error: { message: 'Too many requests. Please wait a moment.', retryAfterSeconds: 60 },
+        }))
+      )
+      .mockImplementationOnce(() =>
+        of({
+          conversationId: 'conv-e2e-retry',
+          messageId: 'msg-asst-102',
+          role: 'assistant',
+          content: 'Here is the requested explanation after waiting for backoff.',
+          createdAtUtc: new Date().toISOString(),
+          model: 'gemini-3.5-flash-lite',
+          inputTokens: 20,
+          outputTokens: 40,
+        })
+      );
 
-    mockApiClient.requestNextHint.mockReturnValue(
-      throwError(() => ({ status: 429, error: { title: 'Too Many Requests' } }))
-    );
-
-    app.onRequestNextHint();
+    app.inputMessage.set('Explain the two-pointer approach');
+    await app.onSendMessage();
+    await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(app.globalError()).toContain('Hint rate limit reached (6 hints/min)');
+    // Verify error banner is visible
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('.error-banner')?.textContent).toContain('Hint rate limit reached');
+    const banner = compiled.querySelector('.chat-error-banner');
+    expect(banner).not.toBeNull();
+    expect(banner?.textContent).toContain('Too many requests');
+    expect(banner?.textContent).toContain('60s');
+
+    // User clicks Retry
+    app.onRetry();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(mockApiClient.sendMessage).toHaveBeenCalledTimes(2);
+    expect(app.chatError()).toBeNull();
+    expect(app.messages().some((m) => m.content.includes('Here is the requested explanation'))).toBe(true);
   });
 });

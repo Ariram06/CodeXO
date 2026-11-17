@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
 import { ExtensionBridgeService } from './extension-bridge.service';
-import { MessageType, ProblemContextPayload } from '../../../../shared/extension-messaging';
+import { MessageType } from '../../../../shared/extension-messaging';
 
 describe('ExtensionBridgeService', () => {
   let service: ExtensionBridgeService;
@@ -13,13 +13,16 @@ describe('ExtensionBridgeService', () => {
         sendMessage: vi.fn((message, callback) => {
           if (message.type === MessageType.Ping) {
             callback?.({ success: true, data: 'PONG_MOCK' });
-          } else if (message.type === MessageType.GetActiveProblem) {
-            callback?.({ success: true, data: null });
           }
         }),
         onMessage: {
           addListener: vi.fn(),
         },
+      },
+      tabs: {
+        query: vi.fn((_queryInfo, callback) => {
+          callback?.([{ id: 101, url: 'https://leetcode.com/problems/two-sum/', title: 'Two Sum - LeetCode' }]);
+        }),
       },
     };
 
@@ -35,19 +38,11 @@ describe('ExtensionBridgeService', () => {
     expect(service.lastPingResponse()).toBe('PONG_MOCK');
   });
 
-  it('should update activeProblem signal when problem context is broadcast', () => {
-    const mockProblem: ProblemContextPayload = {
-      platform: 1,
-      platformProblemId: '1',
-      title: 'Two Sum',
-      slug: 'two-sum',
-      url: 'https://leetcode.com/problems/two-sum/',
-      difficulty: 'Easy',
-      description: 'Given nums and target...',
-    };
-
-    service.activeProblem.set(mockProblem);
-    expect(service.activeProblem()).toEqual(mockProblem);
-    expect(service.activeProblem()?.title).toBe('Two Sum');
+  it('should refresh and return active tab context with platform, url, and title', async () => {
+    const context = await service.refreshActiveTabContext();
+    expect(context.platform).toBe('LeetCode');
+    expect(context.url).toBe('https://leetcode.com/problems/two-sum/');
+    expect(context.title).toBe('Two Sum - LeetCode');
+    expect(service.activeTabContext()).toEqual(context);
   });
 });

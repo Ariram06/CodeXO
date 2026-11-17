@@ -4,7 +4,7 @@
     <div class="brand">
       <span class="brand-icon">⚡</span>
       <h1 class="brand-name">{{ title }}</h1>
-      <span class="brand-tag">DSA Mentor</span>
+      <span class="brand-tag">AI Assistant</span>
     </div>
     <div class="header-actions">
       <div
@@ -28,17 +28,9 @@
     </div>
   </header>
 
-  <!-- Global Error Banner -->
-  @if (globalError()) {
-    <div class="error-banner">
-      <span class="error-text">{{ globalError() }}</span>
-      <button type="button" class="dismiss-btn" (click)="globalError.set(null)">&times;</button>
-    </div>
-  }
-
   <!-- Main Body Content -->
   <main class="app-main">
-    <!-- Authentication Component -->
+    <!-- Authentication Panel (Login / Register) -->
     <app-auth-panel
       [currentUser]="api.currentUser()"
       [isLoading]="isLoading()"
@@ -49,67 +41,112 @@
     />
 
     @if (api.token()) {
-      @if (!bridge.activeProblem()) {
-        <!-- Empty State -->
-        <div class="empty-state">
-          <div class="empty-icon">📖</div>
-          <h2 class="empty-title">No Problem Detected</h2>
-          <p class="empty-desc">
-            Navigate to any DSA problem on LeetCode (e.g., <em>Two Sum</em>) and Codexo will automatically load progressive, spoiler-free hints!
-          </p>
+      <!-- Active Tab Context Bar -->
+      <div class="context-bar">
+        <div class="context-info">
+          <span class="platform-badge">{{ bridge.activeTabContext()?.platform || 'Web' }}</span>
+          <span class="tab-title" [title]="bridge.activeTabContext()?.title || ''">
+            {{ bridge.activeTabContext()?.title || 'Active Tab' }}
+          </span>
         </div>
-      } @else {
-        <!-- Problem Context Banner -->
-        <app-problem-context-banner
-          [problem]="bridge.activeProblem()"
-          [session]="activeSession()"
-        />
+        <button
+          type="button"
+          class="refresh-context-btn"
+          (click)="bridge.refreshActiveTabContext()"
+          title="Refresh active tab context"
+        >
+          🔄
+        </button>
+      </div>
 
-        <!-- Hint Ladder -->
-        <app-hint-ladder
-          [unlockedHints]="sessionHints()"
-          [status]="hintStatus()"
-          (feedbackSubmitted)="onFeedbackSubmitted($event)"
-        />
+      <!-- Chat Messages Container -->
+      <div class="chat-container" #messageContainer>
+        @if (messages().length === 0) {
+          <div class="empty-state">
+            <div class="empty-icon">💬</div>
+            <h2 class="empty-title">Codexo AI Chat</h2>
+            <p class="empty-desc">
+              Ask anything about this problem or code. Codexo provides direct explanations, bug fixes, complete solutions, and complexity analysis.
+            </p>
+          </div>
+        } @else {
+          <div class="message-stream">
+            @for (msg of messages(); track msg.id) {
+              <div class="message-row" [class.user]="msg.role === 'user'" [class.assistant]="msg.role === 'assistant'">
+                <div class="message-bubble">
+                  <div class="message-header">
+                    <span class="sender-name">{{ msg.role === 'user' ? 'You' : 'Codexo' }}</span>
+                    @if (msg.model) {
+                      <span class="model-badge">{{ msg.model }}</span>
+                    }
+                    <span class="message-time">{{ msg.timestamp | date:'shortTime' }}</span>
+                  </div>
+                  <div class="message-content">{{ msg.content }}</div>
+                </div>
+              </div>
+            }
 
-        <!-- Next Hint Request / Attempt Gating Area -->
-        <div class="action-dock">
-          @if (requiresAttempt()) {
-            <app-attempt-submission
-              (attemptSubmitted)="onAttemptSubmitted($event)"
-            />
-          } @else if (canRequestDirectHint() && sessionHints().length < 5) {
-            <div class="direct-hint-action">
-              <button
-                type="button"
-                class="request-hint-btn"
-                (click)="onRequestNextHint()"
-                [disabled]="isLoading()"
-              >
-                @if (isLoading()) {
-                  <span>Generating Hint...</span>
-                } @else {
-                  <span>
-                    {{ sessionHints().length === 0 ? 'Start Study Session (Unlock L1)' : 'Request Next Hint &rarr;' }}
-                  </span>
+            @if (isLoading()) {
+              <div class="message-row assistant loading">
+                <div class="message-bubble">
+                  <div class="message-header">
+                    <span class="sender-name">Codexo</span>
+                  </div>
+                  <div class="typing-indicator">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+        }
+
+        <!-- Specific Error Banner with Retry -->
+        @if (chatError(); as err) {
+          <div class="chat-error-banner">
+            <div class="error-body">
+              <span class="error-icon">⚠️</span>
+              <div class="error-details">
+                <span class="error-msg">{{ err.message }}</span>
+                @if (err.retryAfter) {
+                  <span class="retry-hint">Backoff: {{ err.retryAfter }}s</span>
                 }
-              </button>
-            </div>
-          } @else if (sessionHints().length >= 5) {
-            <div class="completion-card">
-              <span class="completion-icon">🎉</span>
-              <div class="completion-text">
-                <strong>All 5 Hint Levels Unlocked!</strong>
-                <p>You have all the algorithmic insights and edge cases needed. Try implementing the full solution on LeetCode now!</p>
               </div>
             </div>
+            <div class="error-actions">
+              <button type="button" class="retry-btn" (click)="onRetry()">Retry</button>
+              <button type="button" class="dismiss-btn" (click)="chatError.set(null)">&times;</button>
+            </div>
+          </div>
+        }
+      </div>
+
+      <!-- Message Composer Dock -->
+      <div class="composer-dock">
+        <textarea
+          class="composer-input"
+          placeholder="Ask a question about this problem or code... (Enter to send, Shift+Enter for newline)"
+          rows="2"
+          [ngModel]="inputMessage()"
+          (ngModelChange)="inputMessage.set($event)"
+          (keydown)="onKeyDown($event)"
+          [disabled]="isLoading()"
+        ></textarea>
+        <button
+          type="button"
+          class="send-btn"
+          (click)="onSendMessage()"
+          [disabled]="isLoading() || !inputMessage().trim()"
+          title="Send message (Enter)"
+        >
+          @if (isLoading()) {
+            <span class="send-spinner">⏳</span>
+          } @else {
+            <span>Send</span>
           }
-        </div>
-      }
-    } @else {
-      <div class="auth-required-notice">
-        <h3>Welcome to Codexo!</h3>
-        <p>Sign in or create an account to start your structured, spoiler-free DSA learning journey.</p>
+        </button>
       </div>
     }
   </main>
@@ -119,6 +156,6 @@
     [isOpen]="isPreferencesOpen()"
     [preferences]="userPreferences()"
     (closed)="isPreferencesOpen.set(false)"
-    (preferencesSaved)="onPreferencesSaved($event)"
+    (preferencesSaved)="onPreferencesUpdated($event)"
   />
 </div>
