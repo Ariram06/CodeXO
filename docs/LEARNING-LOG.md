@@ -24,7 +24,7 @@
 | C3 | Minimal Chat UI | IMPLEMENTED | `main` | `a61ba7b` | 2026-11-17 |
 | C4 | Context Collection | IMPLEMENTED | `main` | `e65f92b` | 2026-11-17 |
 | C5 | Streaming | IMPLEMENTED | `main` | `b3d535c` | 2026-11-17 |
-| C6 | UI Polish | IMPLEMENTED | `feature/c6-ui-polish` | `7561d65` | 2026-11-17 |
+| C6 | UI Polish | IMPLEMENTED | `main` | `b869a78` | 2026-11-17 |
 | C7 | History, Settings, Privacy | NOT IMPLEMENTED | — | — | — |
 | C8 | Hardening, Docs, Release | NOT IMPLEMENTED | — | — | — |
 
