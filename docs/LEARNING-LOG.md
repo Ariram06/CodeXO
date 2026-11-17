@@ -25,7 +25,7 @@
 | C4 | Context Collection | IMPLEMENTED | `main` | `e65f92b` | 2026-11-17 |
 | C5 | Streaming | IMPLEMENTED | `main` | `b3d535c` | 2026-11-17 |
 | C6 | UI Polish | IMPLEMENTED | `main` | `b869a78` | 2026-11-17 |
-| C7 | History, Settings, Privacy | IMPLEMENTED | `main` | `feature/c7-history-settings-privacy` | 2026-11-17 |
+| C7 | History, Settings, Privacy | IMPLEMENTED | `main` | `c087960` | 2026-11-17 |
 | C8 | Hardening, Docs, Release | NOT IMPLEMENTED | — | — | — |
 
 ---
