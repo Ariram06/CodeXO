@@ -1,41 +1,55 @@
-// Codexo Content Script (Injected on leetcode.com/problems/*)
-// Extracts DSA problem metadata and syncs with Service Worker and Side Panel
+// Codexo Content Script (Injected on supported coding platforms and sites)
+// Coordinates problem text extraction, editor reading, selection capture, and secret sanitization
 
 import {
   MessageType,
   ExtensionMessage,
   ExtensionResponse,
-  ProblemContextPayload,
+  PageContextPayload,
 } from '../shared/extension-messaging';
-import { extractProblemFromDocument } from './leetcode-extractor';
+import { extractPageContext } from './platforms.config';
+import { extractCodeFromMainWorld } from './editor-reader';
+import { redactSecrets } from '../shared/secret-redactor';
 
-let lastExtractedSlug: string | null = null;
 let lastExtractedUrl: string = '';
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-export function performExtraction(): ProblemContextPayload | null {
+export function performExtraction(): PageContextPayload {
   const currentUrl = window.location.href;
-  const problem = extractProblemFromDocument(document, currentUrl);
+  const pageData = extractPageContext(document, currentUrl);
 
-  if (problem) {
-    if (problem.slug !== lastExtractedSlug || currentUrl !== lastExtractedUrl) {
-      lastExtractedSlug = problem.slug;
-      lastExtractedUrl = currentUrl;
-      console.log(`[Codexo Content] Detected problem: "${problem.title}" (${problem.difficulty})`);
+  // Attempt local editor extraction (isolated world fallback)
+  const editorResult = extractCodeFromMainWorld(window);
+  const code = editorResult.code ? redactSecrets(editorResult.code).slice(0, 20000) : undefined;
 
-      try {
-        chrome.runtime.sendMessage({
-          type: MessageType.ProblemDetected,
-          payload: problem,
-          timestamp: Date.now(),
-        });
-      } catch (err) {
-        console.warn('[Codexo Content] Failed to send ProblemDetected message:', err);
-      }
+  const payload: PageContextPayload = {
+    platform: pageData.platform,
+    url: currentUrl,
+    title: pageData.title,
+    problemText: pageData.problemText,
+    language: pageData.language || editorResult.language,
+    code,
+    lineCount: editorResult.lineCount,
+    selection: pageData.selection,
+    errorText: pageData.errorText,
+  };
+
+  if (currentUrl !== lastExtractedUrl) {
+    lastExtractedUrl = currentUrl;
+    console.log(`[Codexo Content] Context extracted on ${payload.platform}: "${payload.title}"`);
+
+    try {
+      chrome.runtime.sendMessage({
+        type: MessageType.PageContextUpdated,
+        payload,
+        timestamp: Date.now(),
+      });
+    } catch {
+      // Extension context invalidated or sidepanel not open yet
     }
   }
 
-  return problem;
+  return payload;
 }
 
 export function scheduleExtraction(delayMs = 400): void {
@@ -50,14 +64,14 @@ export function scheduleExtraction(delayMs = 400): void {
 // 1. Initial extraction attempt
 scheduleExtraction(200);
 
-// 2. MutationObserver to handle dynamically rendered SPA DOM elements
+// 2. MutationObserver for dynamic single-page applications (LeetCode, HackerRank SPA transitions)
 if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
   const targetNode = document.body || document.documentElement;
   if (targetNode) {
     const observer = new MutationObserver((mutations) => {
       const hasAddedNodes = mutations.some((m) => m.type === 'childList' && m.addedNodes.length > 0);
       if (hasAddedNodes) {
-        scheduleExtraction(500);
+        scheduleExtraction(600);
       }
     });
 
@@ -68,7 +82,7 @@ if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') 
   }
 }
 
-// 3. Periodic URL polling to handle Next.js client-side route changes (pushState)
+// 3. Periodic URL polling for pushState SPA routing
 if (typeof window !== 'undefined') {
   let currentHref = window.location.href;
   setInterval(() => {
@@ -84,12 +98,12 @@ if (typeof window !== 'undefined') {
   });
 }
 
-// 4. Listen for explicit extraction requests from Side Panel or Service Worker
+// 4. Message Listener for queries from Side Panel or Service Worker
 if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener(
     (
       message: ExtensionMessage,
-      sender: chrome.runtime.MessageSender,
+      _sender: chrome.runtime.MessageSender,
       sendResponse: (response: ExtensionResponse) => void
     ) => {
       if (message.type === MessageType.Ping) {
@@ -100,12 +114,14 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
         return false;
       }
 
-      if (message.type === MessageType.RequestProblemExtraction) {
-        const problem = performExtraction();
+      if (
+        message.type === MessageType.GetPageContext ||
+        message.type === MessageType.RequestProblemExtraction
+      ) {
+        const payload = performExtraction();
         sendResponse({
-          success: !!problem,
-          data: problem ?? undefined,
-          error: problem ? undefined : 'Problem could not be extracted from current page DOM.',
+          success: true,
+          data: payload,
         });
         return false;
       }

@@ -144,3 +144,25 @@
    - Restart the backend API (`dotnet run --launch-profile http`).
    - Click the **Retry** button in the error banner.
    - Verify the question is automatically re-submitted and the AI answer is received.
+
+---
+
+## 8. Step 7: Verify Context Collection & Code Extraction (Module C4)
+
+1. **Inspect Context Bar Chips:**
+   - Navigate to [https://leetcode.com/problems/two-sum/](https://leetcode.com/problems/two-sum/).
+   - Inspect the context bar in the side panel:
+     - `[LeetCode]` platform chip.
+     - `[Two Sum - LeetCode]` (or question title) chip.
+     - `[Python3]` (or your chosen language in LeetCode's language dropdown) chip.
+     - `[Code: N lines]` green chip reflecting the lines in Monaco editor.
+2. **Test Include/Exclude Code Toggle:**
+   - Uncheck the **Include code** checkbox.
+   - Observe the chip immediately turn orange: `[Code: Excluded]`.
+   - Ask a question in chat: *"What are edge cases for this problem?"*.
+   - Verify that answer is generated based on problem description without including your editor code.
+   - Re-check **Include code**: chip returns to green `[Code: N lines]`.
+3. **Test Manual Refresh & Tab Switch:**
+   - Open a tab with [https://codeforces.com/](https://codeforces.com/) or another page.
+   - Switch tabs back and forth: observe the platform and title chips update dynamically.
+   - Click the **🔄** button: verify context refreshes instantly.

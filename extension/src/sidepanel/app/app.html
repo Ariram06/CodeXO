@@ -43,20 +43,65 @@
     @if (api.token()) {
       <!-- Active Tab Context Bar -->
       <div class="context-bar">
-        <div class="context-info">
-          <span class="platform-badge">{{ bridge.activeTabContext()?.platform || 'Web' }}</span>
-          <span class="tab-title" [title]="bridge.activeTabContext()?.title || ''">
-            {{ bridge.activeTabContext()?.title || 'Active Tab' }}
-          </span>
+        <div class="context-chips-container">
+          <div class="chips-row">
+            <!-- Platform Chip -->
+            <span class="chip platform-chip">
+              {{ bridge.activeTabContext()?.platform || 'Web' }}
+            </span>
+
+            <!-- Title Chip -->
+            <span class="chip title-chip" [title]="bridge.activeTabContext()?.title || 'Active Tab'">
+              {{ bridge.activeTabContext()?.title || 'Active Tab' }}
+            </span>
+
+            <!-- Language Chip (if detected) -->
+            @if (bridge.activeTabContext()?.language; as lang) {
+              <span class="chip lang-chip" title="Active Language">
+                {{ lang }}
+              </span>
+            }
+
+            <!-- Code Status Chip -->
+            @if (!bridge.includeCode()) {
+              <span class="chip code-chip excluded" title="Code is excluded from AI context">
+                Code: Excluded
+              </span>
+            } @else if (bridge.activeTabContext()?.code) {
+              <span class="chip code-chip active" title="Editor code included">
+                Code: {{ bridge.activeTabContext()?.lineCount || 1 }} {{ (bridge.activeTabContext()?.lineCount || 1) === 1 ? 'line' : 'lines' }}
+              </span>
+            } @else {
+              <span class="chip code-chip none" title="No active code editor detected on page">
+                No editor
+              </span>
+            }
+          </div>
+
+          <div class="context-controls">
+            <!-- Include Code Toggle -->
+            <label class="code-toggle-label" title="Toggle whether to include page code in AI prompt">
+              <input
+                type="checkbox"
+                class="code-toggle-checkbox"
+                [checked]="bridge.includeCode()"
+                (change)="bridge.setIncludeCode($any($event.target).checked)"
+              />
+              <span>Include code</span>
+            </label>
+
+            <!-- Refresh Context Button -->
+            <button
+              type="button"
+              class="refresh-context-btn"
+              [class.spinning]="bridge.isRefreshing()"
+              (click)="bridge.refreshActiveTabContext()"
+              title="Refresh active tab context"
+            >
+              🔄
+            </button>
+          </div>
         </div>
-        <button
-          type="button"
-          class="refresh-context-btn"
-          (click)="bridge.refreshActiveTabContext()"
-          title="Refresh active tab context"
-        >
-          🔄
-        </button>
       </div>
 
       <!-- Chat Messages Container -->

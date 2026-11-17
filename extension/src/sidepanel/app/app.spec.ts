@@ -5,6 +5,7 @@ import { App } from './app';
 import { ExtensionBridgeService } from './core/services/extension-bridge.service';
 import { ApiClientService } from './core/services/api-client.service';
 import { ChatMessageResponse } from './core/models/api-contracts';
+import { MessageType } from '../../shared/extension-messaging';
 
 describe('App Component', () => {
   let fixture: ComponentFixture<App>;
@@ -14,7 +15,23 @@ describe('App Component', () => {
   beforeEach(async () => {
     (globalThis as any).chrome = {
       runtime: {
-        sendMessage: vi.fn((_msg, cb) => cb?.({ success: true, data: 'PONG' })),
+        sendMessage: vi.fn((msg, cb) => {
+          if (msg?.type === 'PING' || msg?.type === MessageType.Ping) {
+            cb?.({ success: true, data: 'PONG' });
+          } else if (msg?.type === 'GET_PAGE_CONTEXT' || msg?.type === MessageType.GetPageContext) {
+            cb?.({
+              success: true,
+              data: {
+                platform: 'LeetCode',
+                url: 'https://leetcode.com/problems/two-sum/',
+                title: 'Two Sum - LeetCode',
+                language: 'Python3',
+                code: 'class Solution: pass',
+                lineCount: 1,
+              },
+            });
+          }
+        }),
         onMessage: { addListener: vi.fn() },
       },
       tabs: {
@@ -177,5 +194,50 @@ describe('App Component', () => {
     expect(mockApiClientService.sendMessage).toHaveBeenCalledTimes(2);
     expect(app.chatError()).toBeNull();
     expect(app.messages().some((m) => m.content.includes('Recovered answer on retry'))).toBe(true);
+  });
+
+  it('should render context bar chips and respect includeCode toggle in sendMessage', async () => {
+    // Set active tab context with code
+    app.bridge.activeTabContext.set({
+      platform: 'LeetCode',
+      url: 'https://leetcode.com/problems/two-sum/',
+      title: '1. Two Sum',
+      language: 'Python3',
+      code: 'class Solution: pass',
+      lineCount: 1,
+    });
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('.platform-chip')?.textContent).toContain('LeetCode');
+    expect(compiled.querySelector('.title-chip')?.textContent).toContain('1. Two Sum');
+    expect(compiled.querySelector('.lang-chip')?.textContent).toContain('Python3');
+    expect(compiled.querySelector('.code-chip')?.textContent).toContain('Code: 1 line');
+
+    // 1. Send with includeCode = true (default)
+    app.inputMessage.set('Check this');
+    await app.onSendMessage();
+    expect(mockApiClientService.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: expect.objectContaining({
+          code: 'class Solution: pass',
+        }),
+      })
+    );
+
+    // 2. Toggle includeCode = false
+    app.bridge.setIncludeCode(false);
+    fixture.detectChanges();
+    expect(compiled.querySelector('.code-chip.excluded')?.textContent).toContain('Code: Excluded');
+
+    app.inputMessage.set('Check this without code');
+    await app.onSendMessage();
+    expect(mockApiClientService.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: expect.objectContaining({
+          code: undefined,
+        }),
+      })
+    );
   });
 });

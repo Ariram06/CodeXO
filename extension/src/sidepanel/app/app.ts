@@ -123,7 +123,11 @@ export class App {
     this.chatError.set(null);
     this.scrollToBottom();
 
-    const context: PageContext = await this.bridge.refreshActiveTabContext();
+    const rawContext: PageContext = await this.bridge.refreshActiveTabContext();
+    const context: PageContext = {
+      ...rawContext,
+      code: this.bridge.includeCode() ? rawContext.code : undefined,
+    };
 
     this.api.sendMessage({
       conversationId: this.conversationId() ?? undefined,

@@ -22,7 +22,7 @@
 | C1 | Chat Core (Backend) | IMPLEMENTED | `main` | `1b1c3e3` | 2026-11-16 |
 | C2 | Real Gemini for Chat | IMPLEMENTED | `main` | `b85e80d` | 2026-11-16 |
 | C3 | Minimal Chat UI | IMPLEMENTED | `main` | `a61ba7b` | 2026-11-17 |
-| C4 | Context Collection | NOT IMPLEMENTED | — | — | — |
+| C4 | Context Collection | IMPLEMENTED | `main` | `feature/c4-context-collection` | 2026-11-17 |
 | C5 | Streaming | NOT IMPLEMENTED | — | — | — |
 | C6 | UI Polish | NOT IMPLEMENTED | — | — | — |
 | C7 | History, Settings, Privacy | NOT IMPLEMENTED | — | — | — |
@@ -1244,3 +1244,80 @@ dotnet test Codexo.slnx
 
 ### Common Pitfalls
 - **Async Component State in Unit Tests:** When `onSendMessage` awaits `refreshActiveTabContext()`, testing keydown events requires calling `await fixture.whenStable()` before asserting that `mockApiClientService.sendMessage` was invoked.
+
+
+## C4: Context Collection
+
+### What We Built
+We implemented complete active-tab context extraction for Codexo across competitive programming platforms and arbitrary web pages. We built a MAIN-world execution script (`chrome.scripting.executeScript({ world: 'MAIN' })`) capable of extracting live code from virtualized editors (Monaco, CodeMirror 6, CodeMirror 5, Ace, and textarea fallback) without relying on visible DOM scraping. We consolidated platform adapters into a unified configuration file (`platforms.config.ts`) covering LeetCode, Codeforces, HackerRank, GeeksforGeeks, CodeChef, and a generic web fallback with automatic secret redaction. In the Chrome side panel, we added an interactive context bar with platform, title, language, and line-count chips, an Include/Exclude Code toggle, and a manual refresh action.
+
+### Concepts
+- **MAIN-World Execution vs. Isolated Worlds in MV3:** Manifest V3 content scripts execute in an isolated execution environment. While they share the DOM with the host web page, they cannot access the page's `window` object or JavaScript variables (such as `window.monaco` on LeetCode or `window.ace` on HackerRank). Executing a script with `world: 'MAIN'` via `chrome.scripting.executeScript` runs directly in the page's execution context, allowing access to live editor instances.
+- **Editor Virtualization:** Modern code editors do not render the entire source file as DOM nodes; they virtualize lines, rendering only the few lines currently visible in the viewport. Scraping DOM elements like `div.view-line` yields truncated, partial code. Querying the editor's model directly (`monaco.editor.getModels()[0].getValue()` or CodeMirror ViewState) retrieves the 100% complete, ground-truth buffer.
+- **Client-Side Secret Redaction (Defense-in-Depth):** In addition to backend redaction, the extension sanitizes API keys, GitHub tokens, private keys, bearer tokens, and passwords in the browser before data leaves the user's machine, preventing accidental leakage over the network.
+- **Runtime Optional Host Permissions:** Instead of requesting high-privilege `<all_urls>` permission upfront, the extension defines narrow host permissions for competitive programming domains and requests optional host permissions at runtime for generic sites.
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Developer
+    participant SidePanel as Side Panel (Angular App)
+    participant Bridge as ExtensionBridgeService
+    participant SW as Service Worker (background/service-worker.js)
+    participant Page as Browser Tab (Page MAIN World)
+    participant Content as Content Script (Isolated World)
+    participant API as Codexo API (/api/chat/messages)
+
+    User->>SidePanel: Interacts with active tab / sends message
+    SidePanel->>Bridge: refreshActiveTabContext()
+    Bridge->>SW: chrome.runtime.sendMessage(GET_PAGE_CONTEXT)
+    par MAIN World Editor Capture
+        SW->>Page: chrome.scripting.executeScript({ world: 'MAIN', func: extractCodeFromMainWorld })
+        Page-->>SW: EditorReadResult { code, editor: 'monaco', lineCount: 24, language: 'Python3' }
+    and Isolated World DOM Extraction
+        SW->>Content: chrome.tabs.sendMessage(GET_PAGE_CONTEXT)
+        Content-->>SW: ExtractedPageData { platform: 'LeetCode', title, problemText, errorText, selection }
+    end
+    SW->>SW: Merge results & apply client-side secret redaction
+    SW-->>Bridge: PageContextPayload
+    Bridge-->>SidePanel: activeTabContext signal updated
+    SidePanel->>SidePanel: Render Context Chips [Platform] [Title] [Lang] [Code: 24 lines]
+    alt Include Code is checked
+        SidePanel->>API: sendMessage({ message, context: { ...context, code } })
+    else Include Code is unchecked
+        SidePanel->>API: sendMessage({ message, context: { ...context, code: undefined } })
+    end
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Execute editor extraction directly in Chrome's MAIN world via `chrome.scripting.executeScript`.
+  *Rejected alternative:* Scraping DOM text from `.view-lines` or `.monaco-editor`. Modern editors virtualize lines to optimize rendering memory, which causes offscreen lines to be completely missing from DOM scrapers.
+- **Decision:** Consolidated platform config in a single declarative file (`platforms.config.ts`).
+  *Rejected alternative:* Creating separate class hierarchies or distributed scripts per site. A single declarative config makes adding new competitive programming sites trivial and simplifies testing.
+- **Decision:** Client-side Include/Exclude Code toggle.
+  *Rejected alternative:* Always sending code. Giving developers explicit control over whether their source code is sent to the LLM builds trust, reduces token usage, and addresses corporate privacy concerns.
+
+### Interview Questions & Model Answers
+- **Q: Why can't a Chrome extension content script simply read `window.monaco` directly from the page?**
+  *A:* Manifest V3 content scripts execute in an "isolated world" to prevent security conflicts between extension scripts and web page scripts. While they share the DOM, their JavaScript execution contexts (`window` objects and prototypes) are completely separate. To access `window.monaco` or internal editor instances, the extension must inject a script into the page's MAIN world using `chrome.scripting.executeScript({ world: 'MAIN' })`.
+- **Q: How does editor virtualization affect web scrapers, and how does Codexo overcome it?**
+  *A:* Virtualization dynamically mounts only the visible DOM nodes for lines currently in the viewport (e.g. 20 out of 500 lines). A DOM scraper reading `.view-line` elements would capture only visible lines, corrupting the code sent to the AI. Codexo overcomes this by reading the underlying document model directly from the editor's JavaScript API (e.g., `model.getValue()` or `cmView.view.state.doc.toString()`).
+- **Q: Why should an AI coding assistant implement secret redaction on both the client (browser extension) and the server backend?**
+  *A:* This implements defense-in-depth. Client-side redaction ensures credentials (API keys, private keys, database passwords) never leave the developer's workstation or transit the network. Server-side redaction acts as a safety backstop in case client scripts fail, are bypassed, or alternate API clients are used.
+
+### Run & Test Commands
+```powershell
+# Run Angular extension tests (44 tests passing)
+npm --prefix extension test -- --watch=false
+
+# Build production extension package
+npm --prefix extension run build
+
+# Run backend test suite (46 tests passing)
+dotnet test Codexo.slnx
+```
+
+### Common Pitfalls
+- **Closure Scope in `chrome.scripting.executeScript`:** Functions passed as `func` to `executeScript` are serialized into strings and evaluated in the target page's context. They cannot access outer scope variables or imported modules; any helper logic must be contained within the function or use standard browser globals.
+- **Mocking `chrome.runtime.sendMessage` in Angular Unit Tests:** If mock implementations return generic static payloads (like `'PONG'`) for all message types, asynchronous methods expecting structured typed responses (like `PageContextPayload`) will fail. The mock must inspect `message.type` and respond with appropriate mock contracts.

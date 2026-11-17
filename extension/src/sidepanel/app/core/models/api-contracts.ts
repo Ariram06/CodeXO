@@ -7,6 +7,7 @@ export interface PageContext {
   problemText?: string;
   language?: string;
   code?: string;
+  lineCount?: number;
   selection?: string;
   errorText?: string;
   isTruncated?: boolean;

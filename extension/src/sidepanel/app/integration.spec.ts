@@ -14,7 +14,23 @@ describe('End-to-End Chat Integration Flow (Tab Context -> Bridge -> Sidepanel -
   beforeEach(async () => {
     (globalThis as any).chrome = {
       runtime: {
-        sendMessage: vi.fn((_msg, cb) => cb?.({ success: true, data: 'PONG' })),
+        sendMessage: vi.fn((msg, cb) => {
+          if (msg?.type === 'PING') {
+            cb?.({ success: true, data: 'PONG' });
+          } else if (msg?.type === 'GET_PAGE_CONTEXT') {
+            cb?.({
+              success: true,
+              data: {
+                platform: 'LeetCode',
+                url: 'https://leetcode.com/problems/two-sum/',
+                title: 'Two Sum - LeetCode',
+                language: 'Python3',
+                code: 'def twoSum(): pass',
+                lineCount: 1,
+              },
+            });
+          }
+        }),
         onMessage: { addListener: vi.fn() },
       },
       tabs: {
