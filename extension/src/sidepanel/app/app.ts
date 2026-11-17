@@ -1,8 +1,10 @@
 import { Component, ElementRef, ViewChild, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { SafeHtml } from '@angular/platform-browser';
 import { ExtensionBridgeService } from './core/services/extension-bridge.service';
 import { ApiClientService } from './core/services/api-client.service';
+import { MarkdownRendererService } from './core/services/markdown-renderer.service';
 import {
   ChatMessageItem,
   ChatMessageResponse,
@@ -28,13 +30,16 @@ export class App {
   readonly title = 'Codexo';
   readonly bridge = inject(ExtensionBridgeService);
   readonly api = inject(ApiClientService);
+  readonly markdownRenderer = inject(MarkdownRendererService);
 
   @ViewChild('messageContainer') private messageContainer?: ElementRef<HTMLDivElement>;
+  @ViewChild('composerInput') private composerInput?: ElementRef<HTMLTextAreaElement>;
 
   readonly messages = signal<ChatMessageItem[]>([]);
   readonly conversationId = signal<string | null>(null);
   readonly inputMessage = signal<string>('');
   readonly isLoading = signal<boolean>(false);
+  readonly isUserScrolledUp = signal<boolean>(false);
   readonly chatError = signal<{ message: string; retryAfter?: number } | null>(null);
   readonly lastSentMessage = signal<string | null>(null);
 
@@ -110,6 +115,62 @@ export class App {
     );
   }
 
+  renderAssistantMessage(content: string): SafeHtml {
+    return this.markdownRenderer.renderToSafeHtml(content);
+  }
+
+  onContainerScroll(event: Event): void {
+    const element = event.target as HTMLElement;
+    if (!element) return;
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    // Consider scrolled up if user is more than 50px away from the bottom
+    this.isUserScrolledUp.set(distanceFromBottom > 50);
+  }
+
+  onContainerClick(event: MouseEvent): void {
+    const target = event.target as HTMLElement;
+    const copyBtn = target.closest('.copy-code-btn') as HTMLButtonElement | null;
+    if (copyBtn) {
+      event.stopPropagation();
+      const encoded = copyBtn.getAttribute('data-code');
+      if (encoded) {
+        const code = decodeURIComponent(encoded);
+        navigator.clipboard.writeText(code).then(() => {
+          const originalText = copyBtn.textContent || 'Copy';
+          copyBtn.textContent = 'Copied!';
+          copyBtn.classList.add('copied');
+          setTimeout(() => {
+            copyBtn.textContent = originalText;
+            copyBtn.classList.remove('copied');
+          }, 2000);
+        }).catch((err) => {
+          console.error('Failed to copy code to clipboard', err);
+        });
+      }
+    }
+  }
+
+  onComposerInput(): void {
+    const textarea = this.composerInput?.nativeElement;
+    if (!textarea) return;
+
+    // Reset height to recalculate scrollHeight cleanly
+    textarea.style.height = 'auto';
+    const lineHeight = 19; // px per line
+    const maxLines = 5;
+    const minHeight = 38;
+    const maxHeight = lineHeight * maxLines + 16; // line height + padding
+    const scrollHeight = textarea.scrollHeight;
+
+    if (scrollHeight > maxHeight) {
+      textarea.style.height = `${maxHeight}px`;
+      textarea.style.overflowY = 'auto';
+    } else {
+      textarea.style.height = `${Math.max(scrollHeight, minHeight)}px`;
+      textarea.style.overflowY = 'hidden';
+    }
+  }
+
   onKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -133,9 +194,11 @@ export class App {
     this.messages.update((prev) => [...prev, userMessage]);
     this.lastSentMessage.set(text);
     this.inputMessage.set('');
+    this.onComposerInput();
     this.isLoading.set(true);
     this.chatError.set(null);
-    this.scrollToBottom();
+    this.isUserScrolledUp.set(false);
+    this.scrollToBottom(true);
 
     const rawContext: PageContext = await this.bridge.refreshActiveTabContext();
     const context: PageContext = {
@@ -243,6 +306,7 @@ export class App {
     if (lastMsg) {
       this.inputMessage.set(lastMsg);
       this.chatError.set(null);
+      this.isUserScrolledUp.set(false);
       this.onSendMessage();
     }
   }
@@ -254,11 +318,14 @@ export class App {
     });
   }
 
-  private scrollToBottom(): void {
+  scrollToBottom(force = false): void {
+    if (!force && this.isUserScrolledUp()) {
+      return;
+    }
     setTimeout(() => {
       if (this.messageContainer?.nativeElement) {
         this.messageContainer.nativeElement.scrollTop = this.messageContainer.nativeElement.scrollHeight;
       }
-    }, 50);
+    }, 40);
   }
 }

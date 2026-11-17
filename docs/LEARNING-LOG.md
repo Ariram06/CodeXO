@@ -24,7 +24,7 @@
 | C3 | Minimal Chat UI | IMPLEMENTED | `main` | `a61ba7b` | 2026-11-17 |
 | C4 | Context Collection | IMPLEMENTED | `main` | `e65f92b` | 2026-11-17 |
 | C5 | Streaming | IMPLEMENTED | `main` | `b3d535c` | 2026-11-17 |
-| C6 | UI Polish | NOT IMPLEMENTED | — | — | — |
+| C6 | UI Polish | IMPLEMENTED | `feature/c6-ui-polish` | `7561d65` | 2026-11-17 |
 | C7 | History, Settings, Privacy | NOT IMPLEMENTED | — | — | — |
 | C8 | Hardening, Docs, Release | NOT IMPLEMENTED | — | — | — |
 
@@ -1418,3 +1418,95 @@ dotnet test Codexo.slnx
 ### Common Pitfalls
 - **Resource Disposal Ordering During Cancellation Testing:** In integration tests using `TestServer`, failing to dispose client `HttpResponseMessage` and content streams upon client cancellation leaves the underlying pipe open, preventing the server from detecting connection abort. Enclosing client streams in `try/using` blocks ensures immediate transport closure upon abort.
 - **JSON Property Naming Inconsistencies:** Serializing SSE chunks on the server with default PascalCase while the client TypeScript interface expects camelCase can cause `undefined` fields or silent parsing errors. Configuring `JsonNamingPolicy.CamelCase` for SSE serialization ensures cross-platform consistency.
+
+---
+
+## C6: UI Polish (Markdown, Highlighting, Math & UX)
+
+### What We Built
+In Module C6, we polished the side-panel chat experience into a production-grade developer assistant:
+1. **Markdown Compilation & Strict Sanitization (`MarkdownRendererService`):**
+   - Configured `marked` with GitHub Flavored Markdown (GFM) and line breaks.
+   - Integrated `DOMPurify` to strictly scrub arbitrary script tags, inline event attributes (`onerror`, `onload`), and dangerous URI schemes (`javascript:`), satisfying Chrome MV3 CSP requirements (`script-src 'self'`).
+   - Cleanly bypassed Angular's default HTML sanitization using `DomSanitizer.bypassSecurityTrustHtml()`.
+2. **Prism.js Syntax Highlighting & Code Copy:**
+   - Pre-loaded grammars for Python, C, C++, C#, Java, TypeScript, Go, Rust, SQL, Bash, and JSON.
+   - Built a sleek code block container with upper-case language badge and a functional **Copy** button.
+   - Safely encoded the raw code in a `data-code` attribute via `encodeURIComponent()` to preserve formatting, newlines, and indentation during copy.
+   - Used container-level event delegation on `.chat-container` to handle clipboard copy via `navigator.clipboard.writeText()` and provide visual `"Copied!"` feedback for 2 seconds.
+3. **LaTeX Math Typography (KaTeX):**
+   - Added pre-rendering of inline (`$...$`) and block (`$$...$$`) math expressions using `katex.renderToString()`.
+   - Bundled KaTeX styles seamlessly into global side-panel styles.
+4. **Smart Auto-Scroll with User Pause & Auto-Resizing Composer:**
+   - Added user scroll detection via `onContainerScroll`: if the user scrolls more than 50px away from the bottom while tokens are streaming, auto-scroll pauses to prevent disrupting their reading.
+   - Displayed a floating **↓ Jump to bottom** button when scrolled up, resuming auto-scroll when clicked.
+   - Built dynamic composer height adjustment in `onComposerInput()` expanding from 1 line (~38px) up to 5 lines (~110px), transitioning to internal scrollbar for larger messages and resetting upon message send.
+
+### Concepts
+- **Manifest V3 Content Security Policy (CSP) & Dynamic HTML:** Chrome MV3 enforces a strict CSP forbidding `unsafe-eval` and remote code execution in extension contexts. Dynamically injecting raw HTML string content via `[innerHTML]` can lead to severe security vulnerabilities if unsanitized. Combining a standards-compliant parser (`marked`) with a hardened DOM sanitizer (`DOMPurify`) strips all executable vectors before rendering.
+- **Event Delegation for Dynamically Injected DOM Elements:** When rendering HTML via `[innerHTML]`, elements like code block Copy buttons are not Angular components with template bindings (`(click)`). Adding event listeners to individual buttons would require manual DOM queries on every render. Event delegation attaches a single click listener to the parent container (`(click)="onContainerClick($event)"`), checking `event.target.closest('.copy-code-btn')` to execute the copy action with minimal overhead and zero memory leaks.
+- **Preserving Raw Code State in HTML Data Attributes:** Directly reading `.textContent` or `innerText` from syntax-highlighted code blocks (`<pre><code>...</code></pre>`) can corrupt indentation, strip empty lines, or introduce HTML entities. Storing URI-encoded raw text in `data-code="${encodeURIComponent(rawCode)}"` ensures that clicking Copy writes the byte-for-byte original source code to the clipboard.
+
+### Runtime Flow
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant SidePanel as Side Panel (Angular)
+    participant Renderer as MarkdownRendererService
+    participant KaTeX as KaTeX Engine
+    participant Marked as Marked Parser
+    participant Prism as Prism.js Highlighter
+    participant Purify as DOMPurify Sanitizer
+
+    SidePanel->>Renderer: renderToSafeHtml(rawMarkdown)
+    Renderer->>KaTeX: renderMath(text) -> Replaces $...$ and $$...$$ with HTML
+    KaTeX-->>Renderer: Math-rendered string
+    Renderer->>Marked: parse(mathString)
+    Marked->>Prism: Custom renderer: highlight(code, language)
+    Prism-->>Marked: Syntax highlighted token spans
+    Marked-->>Renderer: Raw HTML with code containers
+    Renderer->>Purify: sanitize(rawHtml) -> Disarms XSS / scripts
+    Purify-->>Renderer: Safe, CSP-compliant HTML
+    Renderer-->>SidePanel: DomSanitizer.bypassSecurityTrustHtml()
+    SidePanel->>User: Displays formatted markdown, code blocks & equations
+
+    opt User clicks Copy
+        User->>SidePanel: Clicks [.copy-code-btn]
+        SidePanel->>SidePanel: onContainerClick (Event Delegation)
+        SidePanel->>User: navigator.clipboard.writeText(decodedCode)
+        SidePanel->>User: Button shows "Copied!" for 2s
+    end
+```
+
+### Design Decisions & Rejected Alternatives
+- **Decision:** Use `Prism.js` components bundled statically instead of runtime dynamic imports.
+  *Rejected alternative:* Runtime lazy loading of Prism components via `script` tags. MV3 CSP strictly forbids loading external or dynamic scripts at runtime. Static bundling ensures all common competitive programming languages are highlighted offline with zero CSP violations.
+- **Decision:** Container-level event delegation for Copy buttons.
+  *Rejected alternative:* Custom Angular components for every code block. Parsing markdown into an Angular component tree or using `ViewContainerRef` for dynamic component creation creates immense complexity during streaming. Pure HTML string rendering with container event delegation is lightweight, fast, and robust.
+- **Decision:** Smart user scroll-lock with threshold detection.
+  *Rejected alternative:* Unconditional `scrollToBottom()` on every token. Forcing scroll down during token streaming frustrates users who are trying to read earlier paragraphs or inspect code. Pausing scroll when the user scrolls up provides an intuitive, chatGPT-like UX.
+
+### Interview Questions & Model Answers
+- **Q: Why is direct `[innerHTML]` binding dangerous in Angular and Chrome MV3 extensions, and how is it safely handled?**
+  *A:* Direct `[innerHTML]` without rigorous sanitization can execute arbitrary JavaScript via injected `<script>` tags, inline event attributes (`<img src=x onerror=...`), or `javascript:` links. In Chrome extensions, an XSS exploit compromises extension permissions and storage (tokens). Codexo handles this safely by passing raw markdown through `DOMPurify.sanitize()` with an explicit tag and attribute whitelist before using Angular's `DomSanitizer.bypassSecurityTrustHtml()`.
+- **Q: How does event delegation improve performance when rendering streaming AI responses containing multiple code snippets?**
+  *A:* In token streaming, the message HTML is continuously re-rendered as new chunks arrive. If event listeners were attached to each Copy button individually, every re-render would require tearing down and re-attaching DOM listeners, risking memory leaks. Event delegation attaches a single listener to the message container that inspects `event.target.closest('.copy-code-btn')`, handling any number of dynamically updated buttons with $O(1)$ listeners.
+- **Q: How does the auto-resizing composer maintain layout stability when typing long queries?**
+  *A:* The composer textarea resets its inline `height` to `'auto'` on input, recalculates its `scrollHeight`, and caps the height at a maximum of 5 lines (~110px). When text exceeds 5 lines, `overflowY` is toggled to `'auto'`, enabling smooth internal scrolling without pushing side-panel headers or the chat stream off screen.
+
+### Run & Test Commands
+```powershell
+# Run Angular extension tests (59 tests passing across 10 suites)
+npm --prefix extension test -- --watch=false
+
+# Build production extension package (zero warnings)
+npm --prefix extension run build
+
+# Run complete backend test suite (51 tests passing)
+dotnet test Codexo.slnx
+```
+
+### Common Pitfalls
+- **Encoding Code Snippets in HTML Attributes:** Placing raw code with special characters or newlines into an HTML attribute (`data-code="..."`) breaks HTML attribute quoting or loses line breaks. Using `encodeURIComponent(rawCode)` when creating the attribute and `decodeURIComponent(encoded)` on copy preserves formatting and special characters perfectly.
+- **Marked and Math Parsing Conflicts:** Running `marked` before LaTeX math parsing can cause marked to interpret underscores (`x_1`) as italics or backslashes (`\frac`) as escapes. Pre-rendering math expressions with KaTeX or tokenizing them before markdown compilation preserves LaTeX formulas intact.

@@ -313,4 +313,83 @@ describe('App Component', () => {
       expect.anything()
     );
   });
+
+  it('should render assistant markdown and handle Copy button clicks via clipboard API', async () => {
+    const clipboardSpy = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: clipboardSpy,
+      },
+    });
+
+    app.messages.set([
+      {
+        id: 'user-1',
+        role: 'user',
+        content: 'Show me python code',
+        timestamp: new Date(),
+      },
+      {
+        id: 'asst-1',
+        role: 'assistant',
+        content: 'Here is the code:\n```python\ndef solve():\n    return 42\n```',
+        timestamp: new Date(),
+        model: 'gemini-3.5-flash-lite',
+      },
+    ]);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const markdownBody = compiled.querySelector('.markdown-body');
+    expect(markdownBody).not.toBeNull();
+
+    const copyBtn = compiled.querySelector('.copy-code-btn') as HTMLButtonElement | null;
+    expect(copyBtn).not.toBeNull();
+    expect(copyBtn?.textContent).toBe('Copy');
+
+    // Click the Copy button
+    copyBtn?.click();
+    await fixture.whenStable();
+
+    expect(clipboardSpy).toHaveBeenCalledWith('def solve():\n    return 42');
+    expect(copyBtn?.textContent).toBe('Copied!');
+  });
+
+  it('should toggle isUserScrolledUp when scroll position changes', () => {
+    expect(app.isUserScrolledUp()).toBe(false);
+
+    // Simulate user scrolling up (distance from bottom = 600 - 300 - 200 = 100 > 50)
+    app.onContainerScroll({
+      target: {
+        scrollHeight: 600,
+        scrollTop: 300,
+        clientHeight: 200,
+      },
+    } as unknown as Event);
+
+    expect(app.isUserScrolledUp()).toBe(true);
+
+    // Simulate user scrolling back to bottom (distance from bottom = 600 - 380 - 200 = 20 <= 50)
+    app.onContainerScroll({
+      target: {
+        scrollHeight: 600,
+        scrollTop: 380,
+        clientHeight: 200,
+      },
+    } as unknown as Event);
+
+    expect(app.isUserScrolledUp()).toBe(false);
+  });
+
+  it('should adjust composer textarea height on input', () => {
+    fixture.detectChanges();
+    const textarea = fixture.nativeElement.querySelector('.composer-input') as HTMLTextAreaElement;
+    expect(textarea).not.toBeNull();
+
+    // Trigger composer input
+    app.inputMessage.set('Line 1\nLine 2\nLine 3');
+    app.onComposerInput();
+
+    expect(textarea.style.height).toBeTruthy();
+  });
 });

@@ -105,7 +105,12 @@
       </div>
 
       <!-- Chat Messages Container -->
-      <div class="chat-container" #messageContainer>
+      <div
+        class="chat-container"
+        #messageContainer
+        (scroll)="onContainerScroll($event)"
+        (click)="onContainerClick($event)"
+      >
         @if (messages().length === 0) {
           <div class="empty-state">
             <div class="empty-icon">💬</div>
@@ -126,24 +131,38 @@
                     }
                     <span class="message-time">{{ msg.timestamp | date:'shortTime' }}</span>
                   </div>
-                  @if (msg.role === 'assistant' && msg.isStreaming && !msg.content) {
-                    <div class="typing-indicator">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </div>
-                  } @else {
-                    <div class="message-content">
-                      {{ msg.content }}
+                  @if (msg.role === 'assistant') {
+                    @if (msg.isStreaming && !msg.content) {
+                      <div class="typing-indicator">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                      </div>
+                    } @else {
+                      <div class="message-content markdown-body" [innerHTML]="renderAssistantMessage(msg.content)"></div>
                       @if (msg.isStreaming) {
                         <span class="streaming-cursor">▊</span>
                       }
-                    </div>
+                    }
+                  } @else {
+                    <div class="message-content user-text">{{ msg.content }}</div>
                   }
                 </div>
               </div>
             }
           </div>
+        }
+
+        <!-- Floating Scroll to Bottom Pill -->
+        @if (isUserScrolledUp()) {
+          <button
+            type="button"
+            class="scroll-bottom-pill"
+            (click)="scrollToBottom(true); isUserScrolledUp.set(false)"
+            title="Scroll to latest response"
+          >
+            ↓ Jump to bottom
+          </button>
         }
 
         <!-- Specific Error Banner with Retry -->
@@ -169,11 +188,13 @@
       <!-- Message Composer Dock -->
       <div class="composer-dock">
         <textarea
+          #composerInput
           class="composer-input"
           placeholder="Ask a question about this problem or code... (Enter to send, Shift+Enter for newline)"
-          rows="2"
+          rows="1"
           [ngModel]="inputMessage()"
           (ngModelChange)="inputMessage.set($event)"
+          (input)="onComposerInput()"
           (keydown)="onKeyDown($event)"
           [disabled]="isLoading()"
         ></textarea>

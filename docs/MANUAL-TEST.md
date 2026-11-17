@@ -193,3 +193,39 @@
 
 3. **Test Non-Streaming Fallback:**
    - If SSE connection drops or is blocked, verify the client automatically falls back to standard `POST /api/chat/messages` and displays the full response cleanly.
+
+---
+
+## 10. Step 9: Verify Markdown, Code Blocks, Copy & Auto-Scroll (Module C6)
+
+1. **Test Markdown & Syntax Highlighting:**
+   - Ask a question that produces code and equations:
+     ```text
+     Write a Python solution for Two Sum and explain the time complexity in big-O notation.
+     ```
+   - Verify the assistant answer renders:
+     - Headings, bullet points, and bold terms formatted cleanly.
+     - Mathematical expressions like $O(n)$ rendered with KaTeX typography.
+     - Python code block rendered in a dark box with:
+       - Header displaying `PYTHON` badge.
+       - A **Copy** button in the top-right corner.
+       - Syntax-highlighted tokens (keywords in blue, strings in green, functions in yellow, comments in gray).
+
+2. **Test One-Click Code Copy:**
+   - Click the **Copy** button on the code block.
+   - Observe the button text transitions to **Copied!** with green feedback.
+   - After 2 seconds, observe the button returns to **Copy**.
+   - Paste into an editor (or composer) and verify exact indentation and line breaks are preserved.
+
+3. **Test Smart Auto-Scroll with User Pause:**
+   - Ask a question with a lengthy multi-paragraph answer.
+   - While tokens are streaming in, scroll up in the message container to read an earlier line.
+   - Observe that auto-scroll pauses immediately, preventing the page from yanking the viewport downwards.
+   - A floating **↓ Jump to bottom** button appears.
+   - Scroll back to the bottom or click the pill; verify smooth auto-scroll resumes.
+
+4. **Test Composer Auto-Resize:**
+   - In the composer textarea, type a multi-line message (using `Shift+Enter` for newlines).
+   - Observe the textarea smoothly expands its height from 1 line up to 5 lines.
+   - Paste a 10-line text block: verify the textarea caps at 5 lines and displays an internal vertical scrollbar without breaking the layout.
+   - Press **Enter**: verify the textarea immediately resets to its compact 1-line height.

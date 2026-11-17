@@ -228,12 +228,36 @@
 
 /* Chat Messages Container */
 .chat-container {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
   padding: 12px;
   overflow-y: auto;
   gap: 12px;
+  scroll-behavior: smooth;
+}
+
+.scroll-bottom-pill {
+  position: sticky;
+  bottom: 4px;
+  align-self: center;
+  background: #2563eb;
+  color: #ffffff;
+  border: 1px solid #3b82f6;
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 10;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: #1d4ed8;
+    transform: translateY(-1px);
+  }
 }
 
 .empty-state {
@@ -335,8 +359,184 @@
 .message-content {
   font-size: 13px;
   line-height: 1.5;
-  white-space: pre-wrap;
   word-break: break-word;
+
+  &.user-text {
+    white-space: pre-wrap;
+  }
+
+  &.markdown-body {
+    white-space: normal;
+
+    h1, h2, h3, h4 {
+      margin-top: 10px;
+      margin-bottom: 6px;
+      font-weight: 600;
+      color: #f3f4f6;
+    }
+
+    h1 { font-size: 15px; border-bottom: 1px solid #27272a; padding-bottom: 3px; }
+    h2 { font-size: 14px; }
+    h3 { font-size: 13px; }
+
+    p {
+      margin: 6px 0;
+    }
+
+    ul, ol {
+      margin: 6px 0;
+      padding-left: 20px;
+    }
+
+    li {
+      margin: 3px 0;
+    }
+
+    blockquote {
+      margin: 8px 0;
+      padding: 4px 10px;
+      border-left: 3px solid #3b82f6;
+      background: rgba(59, 130, 246, 0.08);
+      color: #d1d5db;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 8px 0;
+      font-size: 12px;
+
+      th, td {
+        border: 1px solid #27272a;
+        padding: 5px 8px;
+      }
+
+      th {
+        background: #202024;
+        font-weight: 600;
+        text-align: left;
+      }
+    }
+
+    a {
+      color: #60a5fa;
+      text-decoration: none;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+
+    .inline-code {
+      background: #27272a;
+      color: #93c5fd;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: Consolas, Menlo, Monaco, monospace;
+      font-size: 12px;
+    }
+  }
+}
+
+/* Code Block with Header and Copy Button */
+.code-block-wrapper {
+  background: #141418;
+  border: 1px solid #27272a;
+  border-radius: 6px;
+  margin: 10px 0;
+  overflow: hidden;
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #1e1e24;
+    padding: 4px 10px;
+    border-bottom: 1px solid #27272a;
+
+    .code-lang {
+      font-size: 10px;
+      font-weight: 700;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .copy-code-btn {
+      background: #2b2b34;
+      color: #d1d5db;
+      border: 1px solid #3f3f46;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+
+      &:hover {
+        background: #3f3f46;
+        color: #ffffff;
+      }
+
+      &.copied {
+        background: #059669;
+        border-color: #10b981;
+        color: #ffffff;
+      }
+    }
+  }
+
+  .code-pre {
+    margin: 0;
+    padding: 10px 12px;
+    overflow-x: auto;
+    font-family: Consolas, Menlo, Monaco, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    background: transparent;
+    color: #e5e7eb;
+
+    code {
+      font-family: inherit;
+    }
+  }
+}
+
+/* Prism.js Syntax Highlighting Tokens */
+.token {
+  &.keyword {
+    color: #60a5fa;
+    font-weight: 600;
+  }
+
+  &.string, &.char {
+    color: #86efac;
+  }
+
+  &.number, &.boolean {
+    color: #fca5a5;
+  }
+
+  &.function, &.class-name {
+    color: #fde047;
+  }
+
+  &.comment, &.prolog, &.doctype, &.cdata {
+    color: #71717a;
+    font-style: italic;
+  }
+
+  &.operator, &.punctuation {
+    color: #9ca3af;
+  }
+
+  &.property, &.tag, &.constant {
+    color: #c084fc;
+  }
+
+  &.builtin, &.variable {
+    color: #38bdf8;
+  }
 }
 
 /* Typing Indicator */
@@ -447,9 +647,12 @@
     font-family: inherit;
     font-size: 13px;
     line-height: 1.4;
+    min-height: 38px;
+    max-height: 110px;
     resize: none;
     outline: none;
     box-sizing: border-box;
+    overflow-y: hidden;
 
     &:focus {
       border-color: #3b82f6;
